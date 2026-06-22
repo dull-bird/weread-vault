@@ -10,7 +10,10 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from .config import api_key_source, default_config_path, save_api_key
 from .db import connect, summary
+from .gateway import Gateway
+from .sync import SyncService
 
 
 def _json(handler: BaseHTTPRequestHandler, body: object, status: int = 200) -> None:
@@ -23,21 +26,226 @@ def _json(handler: BaseHTTPRequestHandler, body: object, status: int = 200) -> N
     handler.wfile.write(encoded)
 
 
+def _read_json_body(handler: BaseHTTPRequestHandler, limit: int = 4096) -> dict[str, object]:
+    length = min(int(handler.headers.get("Content-Length", "0")), limit)
+    if not length:
+        return {}
+    body = json.loads(handler.rfile.read(length).decode("utf-8"))
+    return body if isinstance(body, dict) else {}
+
+
+def _sync_counts(service: SyncService, mode: str) -> dict[str, int]:
+    if mode == "books":
+        return {"books": service.books(), "notes": 0, "stats": 0}
+    if mode == "notes":
+        return {"books": service.books(), "notes": service.notes(), "stats": service.stats()}
+    if mode == "full":
+        return {"books": service.books(), "notes": service.notes(full=True), "stats": service.stats()}
+    raise ValueError("未知同步模式。")
+
+
 def _page() -> bytes:
-    return """<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>
+    return r"""<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>WeRead Vault</title><style>
-*{box-sizing:border-box}body{margin:0;background:#f6f7f9;color:#1c2430;font:15px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:1000px;margin:0 auto;padding:36px 20px 64px}h1{margin:0;font-size:28px}.sub{color:#667085;margin:8px 0 28px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px}.card,section{background:white;border:1px solid #e7e9ee;border-radius:10px;padding:18px;box-shadow:0 1px 2px #1018280a}.card b{display:block;font-size:28px;margin-top:6px}section{margin-top:16px}h2{margin:0 0 14px;font-size:18px}form{display:flex;gap:8px}input{flex:1;border:1px solid #cbd2dd;border-radius:7px;padding:10px;font:inherit}button{border:0;border-radius:7px;background:#155eef;color:white;padding:10px 15px;font:inherit;cursor:pointer}table{border-collapse:collapse;width:100%;margin-top:12px}th,td{text-align:left;border-bottom:1px solid #eef0f3;padding:10px 6px;vertical-align:top}th{color:#667085;font-size:13px}td small{color:#667085}.empty{color:#667085;margin:8px 0}@media(max-width:620px){.cards{grid-template-columns:1fr}table{font-size:13px}.hide-mobile{display:none}}</style></head>
-<body><main><h1>WeRead Vault</h1><p class='sub'>仅浏览本地 SQLite 数据；网页不会请求微信读书。</p>
-<div class='cards'><div class='card'>书籍<b id='books'>—</b></div><div class='card'>划线<b id='highlights'>—</b></div><div class='card'>想法<b id='thoughts'>—</b></div></div>
-<section><h2>搜索本地笔记</h2><form id='search'><input id='q' placeholder='输入关键词，搜索划线和想法'><button>搜索</button></form><div id='results' class='empty'>输入关键词后搜索。</div></section>
-<section><h2>最近有笔记的书</h2><div id='book-list' class='empty'>加载中…</div></section></main>
-<script>const e=x=>document.getElementById(x),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function load(){let s=await fetch('/api/summary').then(r=>r.json());for(let k of ['books','highlights','thoughts'])e(k).textContent=s[k]??0;let b=await fetch('/api/books?limit=20').then(r=>r.json());e('book-list').innerHTML=b.length?'<table><thead><tr><th>书名</th><th class="hide-mobile">作者</th><th>笔记</th><th>进度</th></tr></thead><tbody>'+b.map(x=>`<tr><td>${esc(x.title||'未命名')}</td><td class="hide-mobile">${esc(x.author||'—')}</td><td>${x.total_notes||0}</td><td>${x.reading_progress||0}%</td></tr>`).join('')+'</tbody></table>':'尚未同步数据。运行 <code>weread-vault sync</code>。'}
-e('search').onsubmit=async ev=>{ev.preventDefault();let q=e('q').value.trim();if(!q)return;let rows=await fetch('/api/search?q='+encodeURIComponent(q)).then(r=>r.json());e('results').innerHTML=rows.length?'<table><tbody>'+rows.map(x=>`<tr><td><b>${esc(x.title||'未命名')}</b><br><small>${esc(x.kind)} · ${esc(x.chapter||'')}</small><br>${esc(x.content||'')}</td></tr>`).join('')+'</tbody></table>':'没有匹配结果。'};load();</script></body></html>""".encode("utf-8")
+:root{--bg:#fafbfc;--fg:#10151c;--muted:#6b7480;--line:#e9ebef;--card:#fff;--brand:#155eef;--brand2:#7c3aed;--shadow:0 1px 2px #10182808,0 4px 16px #10182808}
+@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#8b949e;--line:#222831;--card:#161b22;--shadow:0 1px 2px #0006}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:1080px;margin:0 auto;padding:40px 22px 72px}
+.head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:27px;letter-spacing:-.02em;font-weight:700}.dot{color:var(--brand)}
+.sub{color:var(--muted);margin:9px 0 30px;font-size:14px}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:34px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.card .k{color:var(--muted);font-size:13px;font-weight:500}.card b{display:block;font-size:30px;font-weight:700;margin-top:4px;letter-spacing:-.02em}
+.card::after{content:'';position:absolute;right:-20px;top:-20px;width:72px;height:72px;border-radius:50%;background:radial-gradient(circle,var(--brand) 0%,transparent 70%);opacity:.10}
+section{margin-top:30px}h2{margin:0 0 16px;font-size:16px;font-weight:650;display:flex;align-items:center;gap:8px}h2 .n{color:var(--muted);font-weight:500;font-size:13px}
+form{display:flex;gap:8px}input{flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font:inherit;color:var(--fg)}input:focus{outline:2px solid var(--brand);outline-offset:-1px;border-color:transparent}
+button{border:0;border-radius:10px;background:var(--brand);color:#fff;padding:11px 18px;font:inherit;font-weight:550;cursor:pointer}button:hover{filter:brightness(1.08)}
+button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex;align-items:center;gap:10px;margin:-10px 0 26px;flex-wrap:wrap}.hint{color:var(--muted);font-size:13px}.msg{font-size:13px}.msg.ok{color:#059669}.msg.err{color:#dc2626}.keybox{display:none;align-items:center;gap:8px;flex-wrap:wrap;width:100%}.keybox input{max-width:380px}.ghost{background:transparent;color:var(--brand);border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line))}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.toolbar select{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 11px;font:inherit;font-size:13px;color:var(--fg);cursor:pointer}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{background:var(--card);color:var(--muted);border:0;padding:8px 14px;font:inherit;font-size:13px;cursor:pointer}
+.seg button.on{background:var(--brand);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:20px 16px}
+.list{display:flex;flex-direction:column;gap:8px}
+.lrow{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 14px;cursor:pointer;box-shadow:var(--shadow)}
+.lrow:hover{border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
+.lrow .lc{width:38px;height:52px;flex:0 0 38px;border-radius:5px;overflow:hidden;position:relative;box-shadow:0 1px 3px #0003;background:var(--line)}
+.lrow .lc .ph{font-size:8px;padding:3px}.lrow .lc img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.lrow .li{flex:1;min-width:0}.lrow .lt{font-size:14px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lrow .la{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow .lcat{font-size:11px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px;white-space:nowrap}
+.lrow .lp{width:110px;flex:0 0 110px}.lrow .ln{width:62px;text-align:right;font-size:12px;color:var(--muted);flex:0 0 62px}
+@media(max-width:620px){.lrow .lcat,.lrow .lp{display:none}}
+.book{display:flex;flex-direction:column;gap:9px;cursor:default}
+.cover{aspect-ratio:3/4;border-radius:9px;overflow:hidden;box-shadow:0 2px 6px #1018281f,0 8px 20px #10182814;background:var(--line);position:relative;transition:transform .25s,box-shadow .25s}
+.book:hover .cover{transform:translateY(-3px);box-shadow:0 4px 10px #10182824,0 14px 30px #1018281f}
+.cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;background:var(--line)}
+.ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;color:#fff;font-weight:650;font-size:14px;line-height:1.35}
+.meta .t{font-size:13px;font-weight:550;line-height:1.35;height:2.7em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.meta .a{font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar{height:4px;border-radius:3px;background:var(--line);margin-top:7px;overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--brand2))}
+.pc{font-size:11px;color:var(--muted);margin-top:4px;display:flex;justify-content:space-between}
+.res{margin-top:6px}.row{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-top:10px;box-shadow:var(--shadow)}
+.row .h{font-size:12px;color:var(--muted);margin-bottom:5px}.row .h b{color:var(--fg)}.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:6px;background:color-mix(in srgb,var(--brand) 14%,transparent);color:var(--brand);margin-right:6px}
+.empty{color:var(--muted);margin:8px 0;font-size:14px}
+.book{cursor:pointer}
+.prog{display:none;height:6px;border-radius:4px;background:var(--line);overflow:hidden;margin:2px 0 24px}
+.prog.show{display:block}
+.prog i{display:block;height:100%;width:0;border-radius:4px;background:linear-gradient(90deg,var(--brand),var(--brand2));transition:width .3s ease}
+.prog.indet i{width:38%;animation:indet 1.15s ease-in-out infinite}
+@keyframes indet{0%{margin-left:-38%}100%{margin-left:100%}}
+.pager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:18px;color:var(--muted);font-size:13px}
+.pager button{background:var(--card);color:var(--fg);border:1px solid var(--line);padding:7px 14px;font-weight:550}.pager button:disabled{opacity:.45}
+.date{font-size:11px;color:var(--muted)}
+.modal{position:fixed;inset:0;background:#0b0f17b3;backdrop-filter:blur(3px);display:none;z-index:50;overflow:auto}
+.modal.show{display:block}
+.sheet{max-width:760px;margin:40px auto;background:var(--bg);border:1px solid var(--line);border-radius:16px;box-shadow:0 20px 60px #0007;overflow:hidden}
+.bh{display:flex;gap:18px;padding:24px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+.bh .cover{width:84px;flex:0 0 84px}
+.bh .bi{flex:1;min-width:0}.bh h3{margin:0 0 4px;font-size:19px;letter-spacing:-.01em}.bh .a{color:var(--muted);font-size:13px}
+.bh .st{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}.chip{font-size:12px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+.bh .x{align-self:flex-start;background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:9px;width:34px;height:34px;font-size:18px;line-height:1;padding:0;cursor:pointer}
+.bhtools{display:flex;gap:8px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--card)}.bhtools button{padding:8px 14px;font-size:13px}
+.notes{padding:8px 24px 36px}
+.ch{margin:26px 0 10px;font-size:14px;font-weight:650;color:var(--brand);padding-bottom:7px;border-bottom:1px dashed var(--line)}
+.hl{margin:14px 0;padding:12px 14px;border-left:3px solid var(--brand);background:var(--card);border-radius:0 10px 10px 0}
+.hl[data-c='1']{border-color:#e11d48}.hl[data-c='2']{border-color:#ea580c}.hl[data-c='3']{border-color:#16a34a}.hl[data-c='4']{border-color:#2563eb}.hl[data-c='5']{border-color:#9333ea}
+.hl .tx{font-size:14.5px;line-height:1.65}.hl .ft{margin-top:7px;display:flex;justify-content:flex-end}
+.th{margin:14px 0;padding:13px 15px;background:color-mix(in srgb,var(--brand) 7%,var(--card));border:1px solid color-mix(in srgb,var(--brand) 22%,var(--line));border-radius:11px}
+.th .lb{font-size:11px;font-weight:600;color:var(--brand);margin-bottom:6px}.th .tx{font-size:14px;line-height:1.6}.th .ft{margin-top:7px;display:flex;justify-content:flex-end}
+.note-empty{padding:40px 24px;text-align:center;color:var(--muted)}
+@media(max-width:620px){.cards{grid-template-columns:1fr}.grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:16px 12px}.sheet{margin:0;border-radius:0;min-height:100vh}}
+</style></head>
+<body><main>
+<div class='head'><h1>WeRead <span class='dot'>Vault</span></h1></div>
+<p class='sub'>为 AI 工具打造的微信读书笔记库 · 划线与想法本地存档，可被 Claude Code、Codex 等 agent 检索、引用、导出到 Obsidian</p>
+<div class='actions'><button id='sync-btn' type='button'>同步</button><button id='full-btn' class='ghost' type='button'>完整重扫</button><span id='api-key-status' class='hint'>检查 API Key…</span><span id='sync-msg' class='msg'></span><div id='keybox' class='keybox'><input id='api-key' type='password' autocomplete='off' placeholder='粘贴 WEREAD_API_KEY，仅保存到本机私有配置'><button id='save-key' class='ghost' type='button'>保存 API Key</button></div></div>
+<div id='prog' class='prog'><i></i></div>
+<div class='cards'>
+<div class='card'><span class='k'>书籍</span><b id='books'>—</b></div>
+<div class='card'><span class='k'>划线</span><b id='highlights'>—</b></div>
+<div class='card'><span class='k'>想法</span><b id='thoughts'>—</b></div></div>
+<section><h2>搜索本地笔记</h2><form id='search'><input id='q' placeholder='输入关键词，搜索划线和想法'><button>搜索</button></form><div id='results' class='res empty'>输入关键词后搜索。</div></section>
+<section><h2>书架 <span class='n' id='shelf-n'></span></h2>
+<div class='toolbar'>
+<div class='seg' id='view-seg'><button data-v='grid' class='on' type='button'>封面</button><button data-v='list' type='button'>列表</button></div>
+<select id='sort-sel' title='排序'><option value='recent'>最近添加</option><option value='progress'>阅读进度</option><option value='notes'>笔记最多</option><option value='title'>书名</option></select>
+<select id='cat-sel' title='分类'><option value=''>全部分类</option></select>
+</div>
+<div id='shelf' class='empty'>加载中…</div><div id='shelf-pager'></div></section></main>
+<div id='modal' class='modal'><div class='sheet' id='sheet'></div></div>
+<script>
+const e=x=>document.getElementById(x),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const PAL=[['#155eef','#7c3aed'],['#0891b2','#0e7490'],['#db2777','#9d174d'],['#ea580c','#b45309'],['#059669','#047857'],['#4f46e5','#7c3aed'],['#dc2626','#991b1b'],['#0d9488','#115e59']];
+function hue(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return PAL[h%PAL.length]}
+function cover(x){const t=x.title||'未命名',fallback=ph(t);if(x.cover){return fallback+`<img loading=lazy src="${esc(x.cover)}" alt="${esc(t)}" onerror="this.remove()">`}return fallback}
+function ph(t){const[a,b]=hue(t);return `<div class=ph style="background:linear-gradient(150deg,${a},${b})">${esc(t).slice(0,18)}</div>`}
+let allBooks=[],curView='grid',curSort='recent',curCat='',shelfPage=1;const SHELF_PAGE=24;
+const topCat=c=>c?String(c).split('-')[0]:'未分类';
+const SORTERS={recent:(a,b)=>(b.sort||0)-(a.sort||0),progress:(a,b)=>(b.reading_progress||0)-(a.reading_progress||0),notes:(a,b)=>(b.total_notes||0)-(a.total_notes||0),title:(a,b)=>String(a.title||'').localeCompare(String(b.title||''),'zh')};
+function renderShelf(){
+ const sh=e('shelf'),pg=e('shelf-pager');pg.innerHTML='';
+ if(!allBooks.length){sh.className='empty';sh.innerHTML='尚未同步数据。点上方“同步”按钮拉取你的书架。';e('shelf-n').textContent='';return}
+ let arr=allBooks.filter(x=>!curCat||topCat(x.category)===curCat).slice().sort(SORTERS[curSort]||SORTERS.recent);
+ if(!arr.length){sh.className='empty';sh.innerHTML='该分类下没有书。';e('shelf-n').textContent='共 0 本';return}
+ const pages=Math.max(1,Math.ceil(arr.length/SHELF_PAGE));
+ if(shelfPage>pages)shelfPage=pages;if(shelfPage<1)shelfPage=1;
+ const slice=arr.slice((shelfPage-1)*SHELF_PAGE,shelfPage*SHELF_PAGE);
+ e('shelf-n').textContent=`共 ${arr.length} 本`+(curCat?` · ${curCat}`:'')+(pages>1?` · 第 ${shelfPage}/${pages} 页`:'');
+ if(curView==='list'){
+  sh.className='list';
+  sh.innerHTML=slice.map(x=>{const p=Math.max(0,Math.min(100,x.reading_progress||0));return `<div class=lrow onclick="openBook('${esc(x.book_id)}')"><div class=lc>${cover(x)}</div><div class=li><div class=lt>${esc(x.title||'未命名')}</div><div class=la>${esc(x.author||'—')}</div></div><span class=lcat>${esc(topCat(x.category))}</span><div class=lp><div class=bar><i style="width:${p}%"></i></div></div><span class=ln>${x.total_notes||0} 笔记</span></div>`}).join('');
+ }else{
+  sh.className='grid';
+  sh.innerHTML=slice.map(x=>{const p=Math.max(0,Math.min(100,x.reading_progress||0));return `<div class=book onclick="openBook('${esc(x.book_id)}')"><div class=cover>${cover(x)}</div><div class=meta><div class=t>${esc(x.title||'未命名')}</div><div class=a>${esc(x.author||'—')}</div></div><div class=bar><i style="width:${p}%"></i></div><div class=pc><span>${x.total_notes||0} 条笔记</span><span>${p}%</span></div></div>`}).join('');
+ }
+ if(pages>1){pg.innerHTML=`<div class=pager><button id=sprev type=button ${shelfPage<=1?'disabled':''}>上一页</button><span>第 ${shelfPage} / ${pages} 页 · 共 ${arr.length} 本</span><button id=snext type=button ${shelfPage>=pages?'disabled':''}>下一页</button></div>`;e('sprev').onclick=()=>{shelfPage--;renderShelf()};e('snext').onclick=()=>{shelfPage++;renderShelf();document.querySelector('.toolbar').scrollIntoView({behavior:'smooth',block:'start'})}}
+}
+async function load(){
+ let s=await fetch('/api/summary').then(r=>r.json());for(let k of ['books','highlights','thoughts'])e(k).textContent=(s[k]??0).toLocaleString();
+ allBooks=await fetch('/api/books?limit=5000').then(r=>r.json());
+ const cats=[...new Set(allBooks.map(x=>topCat(x.category)))].sort((a,b)=>a.localeCompare(b,'zh'));
+ e('cat-sel').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+ if(![...e('cat-sel').options].some(o=>o.value===curCat))curCat='';
+ e('cat-sel').value=curCat;
+ renderShelf();
+}
+e('sort-sel').onchange=ev=>{curSort=ev.target.value;shelfPage=1;renderShelf()};
+e('cat-sel').onchange=ev=>{curCat=ev.target.value;shelfPage=1;renderShelf()};
+e('view-seg').querySelectorAll('button').forEach(b=>b.onclick=()=>{curView=b.dataset.v;shelfPage=1;e('view-seg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));renderShelf()});
+async function loadSettings(){let x=await fetch('/api/settings').then(r=>r.json()),box=e('keybox'),status=e('api-key-status');box.style.display=x.source==='none'?'flex':'none';if(x.source==='env'){status.textContent='API Key 已由环境变量 WEREAD_API_KEY 设置。'}else if(x.source==='config'){status.textContent='API Key 已保存到本机私有配置。'}else{status.textContent='未设置 API Key。同步前请设置；会默认保存到本机私有配置。'}}
+e('save-key').onclick=async()=>{const key=e('api-key').value.trim(),msg=e('sync-msg');if(!key){msg.className='msg err';msg.textContent='API Key 不能为空。';return}e('save-key').disabled=true;try{let res=await fetch('/api/settings/api-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key})});let body=await res.json();if(!res.ok)throw new Error(body.error||'保存失败');e('api-key').value='';msg.className='msg ok';msg.textContent='API Key 已保存到本机私有配置。';await loadSettings()}catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}finally{e('save-key').disabled=false}};
+async function runSync(mode){const sbtn=e('sync-btn'),fbtn=e('full-btn'),msg=e('sync-msg'),prog=e('prog'),bar=prog.querySelector('i'),slabel=sbtn.textContent,flabel=fbtn.textContent;
+ sbtn.disabled=fbtn.disabled=true;(mode==='full'?fbtn:sbtn).textContent='同步中…';
+ msg.className='msg';msg.textContent='首次同步可能较慢，正在连接微信读书…';prog.className='prog show indet';bar.style.width='';
+ let result=null;
+ try{
+  const res=await fetch('/api/sync/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});
+  if(!res.ok){let b=await res.json().catch(()=>({}));throw new Error(b.error||('HTTP '+res.status))}
+  const reader=res.body.getReader(),dec=new TextDecoder();let buf='';
+  for(;;){const{value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});let nl;
+   while((nl=buf.indexOf('\n'))>=0){const line=buf.slice(0,nl).trim();buf=buf.slice(nl+1);if(!line)continue;let o;try{o=JSON.parse(line)}catch(_){continue}
+    if(o.error)throw new Error(o.error);
+    if(o.done){result=o.counts;continue}
+    if(o.line){msg.textContent=o.line;const m=o.line.match(/\[(\d+)\/(\d+)\]/);if(m&&+m[2]>0){prog.className='prog show';bar.style.width=Math.round(m[1]/m[2]*100)+'%'}}}}
+  prog.className='prog show';bar.style.width='100%';
+  msg.className='msg ok';msg.textContent=`同步完成：书架 ${result?.books??0} 本已刷新，更新了笔记的书 ${result?.notes??0} 本，统计快照 +${result?.stats??0}`;
+  await load();await loadSettings();
+ }catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}
+ finally{sbtn.disabled=fbtn.disabled=false;sbtn.textContent=slabel;fbtn.textContent=flabel;setTimeout(()=>{e('prog').className='prog'},1000)}}
+e('sync-btn').onclick=()=>runSync('sync');
+e('full-btn').onclick=()=>runSync('full');
+function fmtDate(ts){if(!ts)return '';const d=new Date(ts*1000);if(isNaN(d))return '';const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`}
+let curQ='',curPage=1;
+async function doSearch(page){const q=curQ;if(!q)return;const res=e('results');
+ // 仅首次搜索显示“搜索中…”；翻页时保留旧结果直接替换，避免高度塌缩造成的闪烁
+ if(!res.querySelector('.row')){res.className='res empty';res.textContent='搜索中…'}
+ let d=await fetch(`/api/search?q=${encodeURIComponent(q)}&page=${page}`).then(r=>r.json());curPage=d.page;
+ if(!d.rows.length){res.className='res';res.innerHTML='<div class="res empty">没有匹配结果。</div>';return}
+ const pages=Math.max(1,Math.ceil(d.total/d.page_size));
+ const html=d.rows.map(x=>`<div class=row onclick="openBook('${esc(x.book_id)}')" style=cursor:pointer><div class=h><span class=tag>${esc(x.kind)}</span><b>${esc(x.title||'未命名')}</b> · ${esc(x.chapter||'')}<span style=float:right class=date>${fmtDate(x.created)}</span></div>${esc(x.content||'')}</div>`).join('')+`<div class=pager><button id=prev type=button ${d.page<=1?'disabled':''}>上一页</button><span>第 ${d.page} / ${pages} 页 · 共 ${d.total} 条</span><button id=next type=button ${d.page>=pages?'disabled':''}>下一页</button></div>`;
+ res.className='res';res.innerHTML=html;
+ e('prev')&&(e('prev').onclick=()=>doSearch(curPage-1));e('next')&&(e('next').onclick=()=>doSearch(curPage+1));}
+e('search').onsubmit=ev=>{ev.preventDefault();curQ=e('q').value.trim();if(!curQ)return;doSearch(1)};
+const modal=e('modal');
+function closeBook(){modal.classList.remove('show');document.body.style.overflow=''}
+modal.onclick=ev=>{if(ev.target===modal)closeBook()};
+document.addEventListener('keydown',ev=>{if(ev.key==='Escape')closeBook()});
+function star(n){n=n||0;return n>0?'★'.repeat(Math.min(n,5)):''}
+async function openBook(id){if(!id)return;modal.classList.add('show');document.body.style.overflow='hidden';e('sheet').innerHTML='<div class=note-empty>加载中…</div>';
+ let d=await fetch('/api/book?book_id='+encodeURIComponent(id)).then(r=>r.json());if(d.error){e('sheet').innerHTML='<div class=note-empty>加载失败。</div>';return}
+ const b=d.book,p=Math.max(0,Math.min(100,b.reading_progress||0));
+ let body='';
+ const reviews=d.thoughts.filter(t=>t.is_book_review),ideas=d.thoughts.filter(t=>!t.is_book_review);
+ if(reviews.length){body+=`<div class=ch>书评</div>`+reviews.map(t=>`<div class=th><div class=lb>书评 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span></div></div>`).join('')}
+ const ideaByCh={};ideas.forEach(t=>{(ideaByCh[t.chapter_uid]=ideaByCh[t.chapter_uid]||[]).push(t)});
+ let curCh=null;const groups=[];
+ d.highlights.forEach(h=>{const c=h.chapter_uid;if(c!==curCh){curCh=c;groups.push({uid:c,title:h.chapter_title,items:[]})}groups[groups.length-1].items.push(h)});
+ if(!groups.length&&!ideas.length&&!reviews.length){body+='<div class=note-empty>这本书还没有划线或想法。</div>'}
+ groups.forEach(g=>{body+=`<div class=ch>${esc(g.title||'未分章')}</div>`;
+   g.items.forEach(h=>{body+=`<div class=hl data-c='${h.color_style||0}'><div class=tx>${esc(h.mark_text||'')}</div><div class=ft><span class=date>${fmtDate(h.create_time)}</span></div></div>`});
+   (ideaByCh[g.uid]||[]).forEach(t=>{body+=`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span></div></div>`})});
+ // 想法所在章节没有划线时，单独补在末尾
+ Object.keys(ideaByCh).forEach(uid=>{if(!groups.some(g=>String(g.uid)===String(uid))){body+=`<div class=ch>${esc(ideaByCh[uid][0].chapter_name||'想法')}</div>`+ideaByCh[uid].map(t=>`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span></div></div>`).join('')}});
+ e('sheet').innerHTML=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div><div class=st><span class=chip>进度 ${p}%</span><span class=chip>划线 ${d.highlights.length}</span><span class=chip>想法 ${ideas.length+reviews.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}</div></div><button class=x title=关闭>×</button></div><div class=bhtools><button id=copymd class=ghost>复制 Markdown</button></div><div class=notes>${body}</div>`;
+ e('sheet').querySelector('.x').onclick=closeBook;
+ e('copymd').onclick=()=>{navigator.clipboard.writeText(toMarkdown(d)).then(()=>{e('copymd').textContent='已复制 ✓';setTimeout(()=>e('copymd').textContent='复制 Markdown',1500)})};
+}
+function toMarkdown(d){const b=d.book;let m=`# ${b.title||'未命名'}\n\n> ${b.author||''}${b.category?' · '+b.category:''}\n\n`;
+ const reviews=d.thoughts.filter(t=>t.is_book_review),ideas=d.thoughts.filter(t=>!t.is_book_review);
+ reviews.forEach(t=>{m+=`## 书评\n\n${t.content||''}  \n*${fmtDate(t.create_time)}*\n\n`});
+ const ideaByCh={};ideas.forEach(t=>{(ideaByCh[t.chapter_uid]=ideaByCh[t.chapter_uid]||[]).push(t)});
+ let curCh=null;const groups=[];d.highlights.forEach(h=>{const c=h.chapter_uid;if(c!==curCh){curCh=c;groups.push({uid:c,title:h.chapter_title,items:[]})}groups[groups.length-1].items.push(h)});
+ groups.forEach(g=>{m+=`## ${g.title||'未分章'}\n\n`;g.items.forEach(h=>{m+=`> ${(h.mark_text||'').replace(/\n/g,' ')}  \n*${fmtDate(h.create_time)}*\n\n`});(ideaByCh[g.uid]||[]).forEach(t=>{m+=`💭 ${t.content||''}  \n*${fmtDate(t.create_time)}*\n\n`})});
+ return m}
+loadSettings();load();</script></body></html>""".encode("utf-8")
 
 
 def make_handler(db_path: Path):
+    sync_lock = threading.Lock()
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:
             return  # Book/note text must not end up in terminal logs.
@@ -56,33 +264,169 @@ def make_handler(db_path: Path):
             with connect(db_path) as conn:
                 if parsed.path == "/health":
                     _json(self, {"status": "ok"})
+                elif parsed.path == "/api/settings":
+                    source = api_key_source()
+                    _json(
+                        self,
+                        {
+                            "api_key_configured": source != "none",
+                            "source": source,
+                            "config_path": str(default_config_path()),
+                        },
+                    )
                 elif parsed.path == "/api/summary":
                     _json(self, summary(conn))
                 elif parsed.path == "/api/books":
-                    limit = min(max(int(query.get("limit", [20])[0]), 1), 100)
+                    limit = min(max(int(query.get("limit", [20])[0]), 1), 5000)
                     rows = conn.execute(
-                        "SELECT title,author,total_notes,reading_progress FROM books ORDER BY sort DESC LIMIT ?", (limit,)
+                        """SELECT book_id,title,author,cover,category,total_notes,reading_progress,finished,sort
+                        FROM books ORDER BY sort DESC LIMIT ?""",
+                        (limit,),
                     ).fetchall()
                     _json(self, [dict(row) for row in rows])
+                elif parsed.path == "/api/book":
+                    book_id = query.get("book_id", [""])[0].strip()
+                    if not book_id:
+                        _json(self, {"error": "缺少 book_id"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    book = conn.execute(
+                        """SELECT book_id,title,author,cover,intro,category,publish_time,
+                        total_notes,reading_progress,review_count,note_count,bookmark_count,finished
+                        FROM books WHERE book_id=?""",
+                        (book_id,),
+                    ).fetchone()
+                    if book is None:
+                        _json(self, {"error": "not found"}, HTTPStatus.NOT_FOUND)
+                        return
+                    highlights = conn.execute(
+                        """SELECT chapter_uid,chapter_title,mark_text,color_style,create_time
+                        FROM highlights WHERE book_id=? ORDER BY chapter_uid, create_time""",
+                        (book_id,),
+                    ).fetchall()
+                    thoughts = conn.execute(
+                        """SELECT chapter_uid,chapter_name,content,star,is_book_review,text_range,create_time
+                        FROM thoughts WHERE book_id=? ORDER BY is_book_review DESC, create_time""",
+                        (book_id,),
+                    ).fetchall()
+                    _json(
+                        self,
+                        {
+                            "book": dict(book),
+                            "highlights": [dict(row) for row in highlights],
+                            "thoughts": [dict(row) for row in thoughts],
+                        },
+                    )
                 elif parsed.path == "/api/search":
                     term = query.get("q", [""])[0].strip()
                     if not term:
-                        _json(self, [])
+                        _json(self, {"total": 0, "page": 1, "page_size": 20, "rows": []})
                         return
+                    page = max(int(query.get("page", [1])[0]), 1)
+                    page_size = 20
                     needle = f"%{term}%"
-                    rows = conn.execute(
-                        """SELECT * FROM (
-                          SELECT b.title AS title,'划线' AS kind,h.chapter_title AS chapter,h.mark_text AS content,h.create_time AS created
+                    union = """SELECT b.book_id AS book_id,b.title AS title,'划线' AS kind,h.chapter_title AS chapter,
+                            h.mark_text AS content,h.create_time AS created
                             FROM highlights h JOIN books b ON b.book_id=h.book_id WHERE h.mark_text LIKE ?
                           UNION ALL
-                          SELECT b.title,'想法',t.chapter_name,t.content,t.create_time
-                            FROM thoughts t JOIN books b ON b.book_id=t.book_id WHERE t.content LIKE ?
-                        ) ORDER BY created DESC LIMIT 100""",
-                        (needle, needle),
+                          SELECT b.book_id,b.title,'想法',t.chapter_name,t.content,t.create_time
+                            FROM thoughts t JOIN books b ON b.book_id=t.book_id WHERE t.content LIKE ?"""
+                    total = conn.execute(
+                        f"SELECT count(*) AS n FROM ({union})", (needle, needle)
+                    ).fetchone()["n"]
+                    rows = conn.execute(
+                        f"SELECT * FROM ({union}) ORDER BY created DESC LIMIT ? OFFSET ?",
+                        (needle, needle, page_size, (page - 1) * page_size),
                     ).fetchall()
-                    _json(self, [dict(row) for row in rows])
+                    _json(
+                        self,
+                        {
+                            "total": total,
+                            "page": page,
+                            "page_size": page_size,
+                            "rows": [dict(row) for row in rows],
+                        },
+                    )
                 else:
                     _json(self, {"error": "not found"}, 404)
+
+        def do_POST(self) -> None:  # noqa: N802
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == "/api/sync/stream":
+                self._sync_stream()
+                return
+            if parsed.path == "/api/settings/api-key":
+                try:
+                    body = _read_json_body(self)
+                    api_key = str(body.get("api_key", "")).strip()
+                    if not api_key:
+                        _json(self, {"error": "API Key 不能为空。"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    path = save_api_key(api_key)
+                    _json(self, {"status": "ok", "source": "config", "config_path": str(path)})
+                except (OSError, ValueError, json.JSONDecodeError) as error:
+                    _json(self, {"error": str(error)}, HTTPStatus.BAD_REQUEST)
+                return
+            if parsed.path != "/api/sync":
+                _json(self, {"error": "not found"}, 404)
+                return
+            if not sync_lock.acquire(blocking=False):
+                _json(self, {"error": "已有同步正在运行，请稍后再试。"}, HTTPStatus.CONFLICT)
+                return
+            try:
+                try:
+                    mode = str(_read_json_body(self).get("mode", "notes"))
+                except json.JSONDecodeError:
+                    mode = "notes"
+                with connect(db_path) as conn:
+                    counts = _sync_counts(SyncService(conn, Gateway(), report=lambda _: None), mode)
+                _json(self, {"status": "ok", "mode": mode, "counts": counts})
+            except ValueError as error:
+                _json(self, {"error": str(error)}, HTTPStatus.BAD_REQUEST)
+            except Exception as error:
+                _json(self, {"error": str(error)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            finally:
+                sync_lock.release()
+
+        def _sync_stream(self) -> None:
+            # One button: refresh the shelf (fast, indeterminate progress) then sync notes
+            # incrementally (determinate i/N progress) and append stat snapshots — streamed as
+            # newline-delimited JSON so the page shows a live, moving progress bar throughout.
+            try:
+                mode = str(_read_json_body(self).get("mode", "sync"))
+            except json.JSONDecodeError:
+                mode = "sync"
+            if not sync_lock.acquire(blocking=False):
+                _json(self, {"error": "已有同步正在运行，请稍后再试。"}, HTTPStatus.CONFLICT)
+                return
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Accel-Buffering", "no")
+            self.send_header("Connection", "close")
+            self.end_headers()
+
+            def emit(obj: dict[str, object]) -> None:
+                try:
+                    self.wfile.write((json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"))
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, ValueError):
+                    pass
+
+            try:
+                emit({"line": "正在同步书架…（首次可能较慢）"})
+                with connect(db_path) as conn:
+                    service = SyncService(conn, Gateway(), report=lambda message: emit({"line": message}))
+                    counts = {"books": 0, "notes": 0, "stats": 0}
+                    counts["books"] = service.books()
+                    emit({"line": "书架已就绪，开始同步笔记…"})
+                    counts["notes"] = service.notes(full=(mode == "full"))
+                    emit({"line": "同步阅读统计…"})
+                    counts["stats"] = service.stats()
+                    emit({"done": True, "counts": counts})
+            except Exception as error:  # noqa: BLE0001 — surfaced to the page as a stream error line
+                emit({"error": str(error)})
+            finally:
+                sync_lock.release()
     return Handler
 
 

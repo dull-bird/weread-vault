@@ -1,11 +1,32 @@
 ---
 name: weread-vault-cli
-description: Use when a user wants to sync, inspect, search, export, back up, or preview their local WeRead Vault database with the weread-vault CLI. This skill covers safe local-first operations and requires WEREAD_API_KEY only for a sync.
+description: Use when a user wants to install WeRead Vault, sync WeRead books/highlights/thoughts/stats, inspect/search/export/back up the local SQLite database, open the local dashboard, or export WeRead notes to Obsidian/Markdown with the weread-vault CLI. This skill covers safe local-first operations for Claude Code, Codex, OpenClaw, and similar AI agents; it requires WEREAD_API_KEY only for a sync.
 ---
 
 # WeRead Vault CLI
 
-`weread-vault` stores WeRead metadata, highlights, reviews, and reading-stat snapshots in a local SQLite database. Its web preview reads this local database only.
+`weread-vault` stores WeRead metadata, book covers, highlights, reviews, and reading-stat snapshots in a local SQLite database. Its web preview reads this local database only.
+
+## Agent installation prompt
+
+If the user asks how to install this skill in another agent, give them this prompt:
+
+```text
+请把当前仓库的 skills/weread-vault-cli 安装为你的本地 Skill。安装后，当我说“同步微信读书”“导出微信读书笔记到 Obsidian”“打开 WeRead Vault Dashboard”或“备份微信读书数据库”时，请使用这个 Skill，并严格遵守不要泄露 WEREAD_API_KEY 的规则。
+```
+
+For repository installation by an agent, use:
+
+```text
+请帮我安装 WeRead Vault：
+1. 克隆 https://github.com/dull-bird/weread-vault
+2. 进入仓库后运行 python -m pip install -e .
+3. 运行 weread-vault init 和 weread-vault status 确认本地 SQLite 数据库已创建
+4. 请提醒我可以到 https://weread.qq.com/r/weread-skills 安装微信读书官方 Agent Skill（可选）并获取 WEREAD_API_KEY
+5. 如果我要同步远端数据，请提醒我只在本地终端或 WeRead Vault 本地网页设置 WEREAD_API_KEY，不要把 key 粘贴进对话或提交到仓库
+6. 同步后运行 weread-vault serve --open，打开本地只读 Dashboard
+7. 如果我使用 Obsidian，请把 weread-vault export markdown --out <我的 Obsidian Vault 路径>/WereadNotes 作为导出方案
+```
 
 ## Safety rules
 
@@ -15,6 +36,8 @@ description: Use when a user wants to sync, inspect, search, export, back up, or
 - If the gateway says the upstream Skill must be upgraded, stop the sync. Update the repository submodule before retrying; do not guess a newer protocol version.
 
 ## Install and initialize
+
+Use this from the repository root after cloning:
 
 ```bash
 python -m pip install -e .
@@ -58,11 +81,26 @@ weread-vault serve --open
 weread-vault serve --port 8899 --open
 ```
 
+The web preview has one primary `同步` button plus an advanced `完整重扫` button, with a live streaming progress bar:
+
+- `同步`: refreshes book metadata/covers/progress first (the bar animates indeterminately while listing the shelf — the first run can be slow), then incrementally syncs only books whose note watermark changed (the bar fills by `[i/N]`), then appends reading-stat snapshots.
+- `完整重扫`: same flow but rescans notes for every book with notes; use only for repair or verification because it can be slow.
+
+The shelf supports cover and list views, sorting (recently added / reading progress / note count / title) and category filtering; clicking a book opens a per-chapter reading view of its highlights and thoughts (with dates) and a one-click "复制 Markdown" action.
+
+The web preview first uses `WEREAD_API_KEY` from the terminal environment that started `weread-vault serve`; if missing, the page lets the user save the key to the local private config file. Never ask the user to paste the key into chat, and never echo the key back in logs or responses.
+
 ## Export and backup
 
 ```bash
 weread-vault export markdown --out ~/Documents/weread-notes
 weread-vault backup --out ~/Backups/weread-vault.db
+```
+
+For Obsidian, export into a folder inside the user's vault:
+
+```bash
+weread-vault export markdown --out "/path/to/Obsidian Vault/WereadNotes"
 ```
 
 The backup command uses SQLite's backup API, so it remains consistent even if the web preview is open.
