@@ -45,6 +45,36 @@ weread-vault backup --out ~/Backups/weread-vault.db
 
 所有命令可通过 `--db /path/to/file.db` 使用另一份数据库。网页只监听 `127.0.0.1`，不会暴露到局域网。
 
+## OpenClaw 定时同步示例
+
+可以用 OpenClaw cron 每天唤起一个隔离任务，让 Agent 执行 CLI 同步并导出到 Obsidian。下面示例假设：
+
+- 仓库在 `~/projects/weread-vault`
+- `WEREAD_API_KEY` 保存在 `~/.weread.env`
+- Obsidian 微信读书目录是 `~/Documents/Obsidian Vault/60_Notes/微信读书`
+
+```json
+{
+  "name": "weread-vault daily sync",
+  "schedule": {
+    "kind": "cron",
+    "expr": "0 7 * * *",
+    "tz": "Asia/Shanghai"
+  },
+  "sessionTarget": "isolated",
+  "payload": {
+    "kind": "agentTurn",
+    "message": "同步微信读书笔记到 Obsidian：先读取 ~/.weread.env 获取 WEREAD_API_KEY，然后在 ~/projects/weread-vault 运行 weread-vault sync，成功后运行 weread-vault export markdown --out \"~/Documents/Obsidian Vault/60_Notes/微信读书\"。同步失败时保留错误日志，不要打印 API Key。",
+    "timeoutSeconds": 1800
+  },
+  "delivery": {
+    "mode": "announce"
+  }
+}
+```
+
+如果你更想让 cron 直接跑 shell，也可以把上述 prompt 改成调用一个本地脚本；关键点是不要把 `WEREAD_API_KEY` 写进仓库，导出目录按自己的 Obsidian 路径替换。
+
 ## 同步是怎样保证安全的
 
 正常的 `weread-vault sync` 分三段：
