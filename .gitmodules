@@ -1,0 +1,3 @@
+[submodule "vendor/tencent-weread-skill"]
+	path = vendor/tencent-weread-skill
+	url = https://github.com/Tencent/WeChatReading.git
