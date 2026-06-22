@@ -15,7 +15,42 @@ def _date(value: int | None) -> str:
     return time.strftime("%Y-%m-%d", time.localtime(value)) if value else ""
 
 
-def export_markdown(conn: sqlite3.Connection, destination: Path) -> int:
+# 脚本管理的 frontmatter 字段（每次从微信读书真相刷新）；其余字段视为用户在
+# Obsidian 里自加（分类/评分/重读标记等），重新导出时予以保留。
+_MANAGED_FRONTMATTER = {"title", "author", "book_id", "source", "category", "progress", "highlights", "thoughts"}
+
+
+def _user_frontmatter(path: Path) -> list[str]:
+    """返回已有文件中用户自加的 frontmatter 行（脚本管理字段除外）。"""
+    if not path.exists():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    if not text.startswith("---"):
+        return []
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return []
+    preserved: list[str] = []
+    keep = False
+    for line in parts[1].strip("\n").splitlines():
+        # 顶层 key 行：非空格开头且含冒号；其续行（缩进的列表等）跟随上一个 key 的去留
+        if line and not line[0].isspace() and ":" in line:
+            keep = line.split(":", 1)[0].strip() not in _MANAGED_FRONTMATTER
+        if keep:
+            preserved.append(line)
+    return preserved
+
+
+def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = False) -> int:
+    """渲染每本有笔记的书为 markdown。返回本次实际写入（新建或有变化）的篇数。
+
+    增量：渲染结果与磁盘内容一致时跳过写入，不改动 mtime，避免触发
+    iCloud 重传 / Obsidian / 索引重建。``force=True`` 则忽略增量强制全量重写。
+    用户在 frontmatter 中自加的字段会被保留。
+    """
     destination.mkdir(parents=True, exist_ok=True)
     books = conn.execute("SELECT * FROM books WHERE total_notes > 0 ORDER BY sort DESC").fetchall()
     names: dict[str, str] = {}
@@ -33,6 +68,7 @@ def export_markdown(conn: sqlite3.Connection, destination: Path) -> int:
         if filename in names and names[filename] != book["book_id"]:
             filename = f"{filename}-{book['book_id']}"
         names[filename] = book["book_id"]
+        path = destination / f"{filename}.md"
         progress = book["reading_progress"] or 0
         lines = [
             "---",
@@ -40,9 +76,11 @@ def export_markdown(conn: sqlite3.Connection, destination: Path) -> int:
             f'author: "{book["author"] or ""}"',
             f'book_id: "{book["book_id"]}"',
             "source: " + '"微信读书"',
+            f'category: "{book["category"] or ""}"',
             f"progress: {progress}",
             f"highlights: {len(highlights)}",
             f"thoughts: {len(thoughts)}",
+            *_user_frontmatter(path),
             "---",
             "",
             f"# {book['title'] or '未命名'}",
@@ -72,6 +110,9 @@ def export_markdown(conn: sqlite3.Connection, destination: Path) -> int:
             for item in chapter_thoughts:
                 prefix = f"【{item['chapter_name']}】" if item["chapter_name"] else ""
                 lines.extend([f"- {prefix}{item['content'] or ''}", f"  <small>{_date(item['create_time'])}</small>", ""])
-        (destination / f"{filename}.md").write_text("\n".join(lines), encoding="utf-8")
+        content = "\n".join(lines)
+        if not force and path.exists() and path.read_text(encoding="utf-8") == content:
+            continue
+        path.write_text(content, encoding="utf-8")
         exported += 1
     return exported

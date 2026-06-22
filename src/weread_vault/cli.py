@@ -33,6 +33,7 @@ def parser() -> argparse.ArgumentParser:
     export_sub = export.add_subparsers(dest="export_command", required=True)
     markdown = export_sub.add_parser("markdown", help="导出为 Markdown")
     markdown.add_argument("--out", required=True, help="目标目录")
+    markdown.add_argument("--force", action="store_true", help="忽略增量，强制重写所有文件")
     backup = sub.add_parser("backup", help="创建 SQLite 一致性备份")
     backup.add_argument("--out", required=True, help="备份文件路径")
     serve_parser = sub.add_parser("serve", help="打开本地网页预览")
@@ -84,8 +85,8 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "export":
             _require_db(db_path)
             with connect(db_path) as conn:
-                count = export_markdown(conn, Path(args.out).expanduser())
-            print(f"已导出 {count} 篇 Markdown")
+                count = export_markdown(conn, Path(args.out).expanduser(), force=args.force)
+            print(f"已更新 {count} 篇 Markdown（无变化的已跳过）")
         elif args.command == "backup":
             _require_db(db_path)
             destination = Path(args.out).expanduser()
