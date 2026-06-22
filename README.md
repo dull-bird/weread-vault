@@ -83,6 +83,21 @@ weread-vault backup --out ~/Backups/weread-vault.db
 
 所有命令可通过 `--db /path/to/file.db` 使用另一份数据库。网页只监听 `127.0.0.1`，不会暴露到局域网。
 
+## 给 AI agent 的完整微信读书 API（卖点）
+
+除了归档你自己的笔记，CLI 还把**整套微信读书 Skill API** 暴露成命令，让 Claude Code、Codex、OpenClaw 等 agent 可以直接取数据——书城搜索、**别人的热门划线**、**公开书评**、富书籍元信息（评分/字数/ISBN）等。这些命令输出 JSON、需要 `WEREAD_API_KEY`，不写入本地库：
+
+```bash
+weread-vault apis                       # 列出全部接口及必填参数（让 agent 自助发现能力）
+weread-vault search "三体" --count 5     # 书城搜索（电子书/有声书/作者/全文等 tab）
+weread-vault book <bookId> info         # 书籍富信息：评分、字数、出版社、ISBN
+weread-vault book <bookId> popular      # 他人最多人划的句子（热门划线，含人数）
+weread-vault book <bookId> reviews      # 这本书的公开书评/想法
+weread-vault api /book/readreviews bookId=<id> chapterUid=<uid> ...   # 任意接口原样透传
+```
+
+> 微信读书官方接口不开放全书正文，所以「划线前后那一整段原文」拿不到；能接近的是全文搜索片段和同章节他人划线。这一点我们如实标注，不虚构数据。
+
 ## OpenClaw 定时同步示例
 
 可以用 OpenClaw cron 每天唤起一个隔离任务，让 Agent 执行 CLI 同步并导出到 Obsidian。下面示例假设：

@@ -90,6 +90,22 @@ The shelf supports cover and list views, sorting (recently added / reading progr
 
 The web preview first uses `WEREAD_API_KEY` from the terminal environment that started `weread-vault serve`; if missing, the page lets the user save the key to the local private config file. Never ask the user to paste the key into chat, and never echo the key back in logs or responses.
 
+## WeRead API access (for agents)
+
+Beyond the user's own archived notes, the CLI exposes the full WeRead Skill API so an agent can pull live data — bookstore search, other readers' popular highlights, public reviews, rich book metadata. These commands print JSON to stdout and require `WEREAD_API_KEY`. They do not write to the local database.
+
+```bash
+weread-vault apis                       # list every supported endpoint and its required params
+weread-vault search "三体" --count 5     # bookstore search (books / authors / full-text tabs)
+weread-vault book <bookId> info         # rich metadata: rating, word count, publisher, ISBN
+weread-vault book <bookId> popular      # other readers' most-highlighted sentences (with counts)
+weread-vault book <bookId> reviews      # public reviews/thoughts on the book
+weread-vault book <bookId> chapters     # chapter directory
+weread-vault api /book/readreviews bookId=<id> chapterUid=<uid> ...   # any endpoint, raw passthrough
+```
+
+Use `weread-vault apis` first to discover endpoint names and parameters, then `weread-vault api <endpoint> key=value …` for anything without a named shortcut. Numeric values are sent as numbers; id-like params (`bookId`, `reviewId`) stay strings. The official Skill does not expose full book text, so original paragraphs around a highlight are not available — the closest signals are full-text search snippets and other readers' highlights on the same chapter.
+
 ## Export and backup
 
 ```bash
