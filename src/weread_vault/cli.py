@@ -27,6 +27,7 @@ def parser() -> argparse.ArgumentParser:
     sync = sub.add_parser("sync", help="从微信读书同步到本地库")
     sync.add_argument("scope", nargs="?", choices=("all", "books", "notes", "stats"), default="all")
     sync.add_argument("--full-notes", action="store_true", help="忽略变更水位，重新同步所有有笔记的书")
+    sync.add_argument("--limit", type=int, help="最多同步多少本笔记书；适合首次测试或分批同步")
     sub.add_parser("status", help="显示本地库状态")
     export = sub.add_parser("export", help="导出本地笔记")
     export_sub = export.add_subparsers(dest="export_command", required=True)
@@ -67,14 +68,16 @@ def main(argv: list[str] | None = None) -> None:
             initialize(db_path)
             with connect(db_path) as conn:
                 service = SyncService(conn, Gateway())
+                if args.limit is not None and args.limit < 1:
+                    raise WereadVaultError("--limit 必须是正整数。")
                 if args.scope == "books":
                     count = service.books()
                 elif args.scope == "notes":
-                    count = service.notes(args.full_notes)
+                    count = service.notes(args.full_notes, args.limit)
                 elif args.scope == "stats":
                     count = service.stats()
                 else:
-                    count = service.all(args.full_notes)
+                    count = service.all(args.full_notes, args.limit)
             print(f"同步完成：{count}")
         elif args.command == "status":
             _print_status(db_path)

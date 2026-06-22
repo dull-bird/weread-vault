@@ -37,6 +37,12 @@ Use a full note pass only to repair or verify a database:
 weread-vault sync notes --full-notes
 ```
 
+For a first-run smoke test or a deliberately batched migration, limit the number of books:
+
+```bash
+weread-vault sync notes --limit 1
+```
+
 Each book is fetched completely before one SQLite transaction is committed. On a network/API failure, that book retains its previous rows and synchronization marker, so the next run retries it safely.
 
 ## Inspect and preview

@@ -55,6 +55,12 @@ weread-vault backup --out ~/Backups/weread-vault.db
 
 `weread-vault sync notes --full-notes` 可用于人工校验或修复，它会重新扫描每一本已有笔记的书。
 
+首次试用可先只同步一小批，确认结果后再运行完整同步：
+
+```bash
+weread-vault sync notes --limit 1
+```
+
 数据边界由官方 Agent Skill 决定：目前可归档书目、划线、个人想法和统计；仅有数量而没有正文的书签、以及无法由官方接口提供的内容，工具不会虚构成可备份数据。
 
 ## 官方 Skill submodule

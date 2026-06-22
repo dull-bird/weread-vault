@@ -20,13 +20,21 @@ class SyncService:
 
     def _run(self, scope: str, action: Callable[[], int]) -> int:
         started = int(time.time())
+        # A terminal/process can disappear mid-sync. Do not leave a misleading
+        # permanent "running" state; committed books remain safe and retryable.
+        self.conn.execute(
+            """UPDATE sync_runs SET completed_at=?, status='interrupted',
+            detail='检测到未完成的旧同步；新同步开始前已标记为中断'
+            WHERE status='running'""",
+            (started,),
+        )
         run = self.conn.execute(
             "INSERT INTO sync_runs(started_at, status, scope) VALUES (?, 'running', ?)", (started, scope)
         )
         self.conn.commit()
         try:
             count = action()
-        except Exception as error:
+        except BaseException as error:
             self.conn.execute(
                 "UPDATE sync_runs SET completed_at=?, status='failed', detail=? WHERE id=?",
                 (int(time.time()), str(error), run.lastrowid),
@@ -44,14 +52,14 @@ class SyncService:
     def books(self) -> int:
         return self._run("books", self._sync_books)
 
-    def notes(self, full: bool = False) -> int:
-        return self._run("notes", lambda: self._sync_notes(full))
+    def notes(self, full: bool = False, limit: int | None = None) -> int:
+        return self._run("notes", lambda: self._sync_notes(full, limit))
 
     def stats(self) -> int:
         return self._run("stats", self._sync_stats)
 
-    def all(self, full_notes: bool = False) -> dict[str, int]:
-        return {"books": self.books(), "notes": self.notes(full_notes), "stats": self.stats()}
+    def all(self, full_notes: bool = False, note_limit: int | None = None) -> dict[str, int]:
+        return {"books": self.books(), "notes": self.notes(full_notes, note_limit), "stats": self.stats()}
 
     def _sync_books(self) -> int:
         last_sort: int | None = None
@@ -110,11 +118,14 @@ class SyncService:
                 values,
             )
 
-    def _sync_notes(self, full: bool) -> int:
+    def _sync_notes(self, full: bool, limit: int | None) -> int:
         where = "" if full else "WHERE notes_synced_sort IS NULL OR sort > notes_synced_sort"
-        rows = self.conn.execute(
-            f"SELECT book_id, title, sort FROM books {where} ORDER BY sort DESC"  # controlled SQL fragment
-        ).fetchall()
+        sql = f"SELECT book_id, title, sort FROM books {where} ORDER BY sort DESC"  # controlled SQL fragment
+        values: tuple[int, ...] = ()
+        if limit is not None:
+            sql += " LIMIT ?"
+            values = (limit,)
+        rows = self.conn.execute(sql, values).fetchall()
         total = len(rows)
         self.report(f"笔记：待同步 {total} 本")
         synced = 0
