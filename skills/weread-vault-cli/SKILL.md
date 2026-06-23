@@ -111,7 +111,11 @@ Use `weread-vault apis` first to discover endpoint names and parameters, then `w
 ```bash
 weread-vault export markdown --out ~/Documents/weread-notes
 weread-vault backup --out ~/Backups/weread-vault.db
+weread-vault export flomo --webhook "$FLOMO_WEBHOOK"            # one memo per book
+weread-vault export notion --token "$NOTION_TOKEN" --database "$NOTION_DATABASE_ID"  # one page per book
 ```
+
+flomo / Notion secrets come from `--webhook` / `--token` / `--database` or the env vars `FLOMO_WEBHOOK`, `NOTION_TOKEN`, `NOTION_DATABASE_ID`. Never paste these into chat or commit them. Both exporters only read the local database and POST the user's own notes to the user's own destination; confirm with the user before running an export that sends data to an external service.
 
 For Obsidian, export into a folder inside the user's vault:
 

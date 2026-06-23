@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ from .db import connect, initialize, summary
 from .errors import WereadVaultError
 from .export import export_markdown
 from .gateway import Gateway
+from .integrations import export_flomo, export_notion
 from .sync import SyncService
 from .web import serve
 
@@ -54,6 +56,13 @@ def parser() -> argparse.ArgumentParser:
     markdown = export_sub.add_parser("markdown", help="导出为 Markdown")
     markdown.add_argument("--out", required=True, help="目标目录")
     markdown.add_argument("--force", action="store_true", help="忽略增量，强制重写所有文件")
+    flomo = export_sub.add_parser("flomo", help="导出到 flomo（每本书一条 memo）")
+    flomo.add_argument("--webhook", help="flomo 专属 API；默认读环境变量 FLOMO_WEBHOOK")
+    flomo.add_argument("--limit", type=int, help="最多导出多少本")
+    notion = export_sub.add_parser("notion", help="导出到 Notion 数据库（每本书一页）")
+    notion.add_argument("--token", help="Notion 集成 token；默认读 NOTION_TOKEN")
+    notion.add_argument("--database", help="Notion 数据库 ID；默认读 NOTION_DATABASE_ID")
+    notion.add_argument("--limit", type=int, help="最多导出多少本")
     backup = sub.add_parser("backup", help="创建 SQLite 一致性备份")
     backup.add_argument("--out", required=True, help="备份文件路径")
     serve_parser = sub.add_parser("serve", help="打开本地网页预览")
@@ -123,8 +132,24 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "export":
             _require_db(db_path)
             with connect(db_path) as conn:
-                count = export_markdown(conn, Path(args.out).expanduser(), force=args.force)
-            print(f"已更新 {count} 篇 Markdown（无变化的已跳过）")
+                if args.export_command == "markdown":
+                    count = export_markdown(conn, Path(args.out).expanduser(), force=args.force)
+                    print(f"已更新 {count} 篇 Markdown（无变化的已跳过）")
+                elif args.export_command == "flomo":
+                    webhook = args.webhook or os.environ.get("FLOMO_WEBHOOK")
+                    if not webhook:
+                        raise WereadVaultError("需要 flomo webhook：--webhook 或环境变量 FLOMO_WEBHOOK。")
+                    count = export_flomo(conn, webhook, args.limit)
+                    print(f"已发送 {count} 条 memo 到 flomo。")
+                elif args.export_command == "notion":
+                    token = args.token or os.environ.get("NOTION_TOKEN")
+                    database = args.database or os.environ.get("NOTION_DATABASE_ID")
+                    if not token or not database:
+                        raise WereadVaultError(
+                            "需要 Notion --token 与 --database（或环境变量 NOTION_TOKEN / NOTION_DATABASE_ID）。"
+                        )
+                    count = export_notion(conn, token, database, args.limit)
+                    print(f"已在 Notion 创建 {count} 页。")
         elif args.command == "backup":
             _require_db(db_path)
             destination = Path(args.out).expanduser()

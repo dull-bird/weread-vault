@@ -87,7 +87,15 @@ weread-vault serve --open
 # 导出 Markdown 和创建可迁移的数据库备份
 weread-vault export markdown --out ~/Documents/weread-notes
 weread-vault backup --out ~/Backups/weread-vault.db
+
+# 导出到 flomo（每本书一条 memo，带 #微信读书 标签）
+weread-vault export flomo --webhook "$FLOMO_WEBHOOK"
+
+# 导出到 Notion 数据库（每本书一页，按章节分块）
+weread-vault export notion --token "$NOTION_TOKEN" --database "$NOTION_DATABASE_ID"
 ```
+
+flomo / Notion 的密钥可用 `--webhook` / `--token` 传入，或放进环境变量 `FLOMO_WEBHOOK`、`NOTION_TOKEN`、`NOTION_DATABASE_ID`（不会写进仓库或日志）。这样 readneo 有的 Notion / flomo 同步，这里也有，且数据始终先落到本机 SQLite。
 
 所有命令可通过 `--db /path/to/file.db` 使用另一份数据库。网页只监听 `127.0.0.1`，不会暴露到局域网。
 
