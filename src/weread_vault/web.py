@@ -174,6 +174,15 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .th{margin:14px 0;padding:13px 15px;background:color-mix(in srgb,var(--brand) 7%,var(--card));border:1px solid color-mix(in srgb,var(--brand) 22%,var(--line));border-radius:11px}
 .th .lb{font-size:11px;font-weight:600;color:var(--brand);margin-bottom:6px}.th .tx{font-size:14px;line-height:1.6}.th .ft{margin-top:7px;display:flex;justify-content:flex-end}
 .note-empty{padding:40px 24px;text-align:center;color:var(--muted)}
+.tabs{display:flex;gap:18px;padding:12px 24px 0;background:var(--card);border-bottom:1px solid var(--line)}
+.tabs button{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);padding:8px 2px;font:inherit;font-size:13px;cursor:pointer}
+.tabs button.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+.pop{margin:12px 0;padding:11px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;border-left:3px solid var(--brand2)}
+.pop .tx{font-size:14px;line-height:1.62}.pop .ft{margin-top:6px;font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:10px}
+.rv{margin:12px 0;padding:13px 15px;background:var(--card);border:1px solid var(--line);border-radius:11px}
+.rv .au{font-size:12px;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between;gap:10px}.rv .tx{font-size:14px;line-height:1.62}
+.smode{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;vertical-align:middle}
+.smode button{background:var(--card);border:0;color:var(--muted);padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}.smode button.on{background:var(--brand);color:#fff}
 @media(max-width:620px){.cards{grid-template-columns:1fr}.grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:16px 12px}.sheet{margin:0;border-radius:0;min-height:100vh}}
 </style></head>
 <body><main>
@@ -186,7 +195,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <div class='card'><span class='k'>划线</span><b id='highlights'>—</b></div>
 <div class='card'><span class='k'>想法</span><b id='thoughts'>—</b></div></div>
 <section id='stats-sec' style='display:none'><h2>阅读统计 <span class='n' id='stats-word'></span></h2><div id='stats' class='empty'>加载中…</div></section>
-<section><h2>搜索本地笔记</h2><form id='search'><input id='q' placeholder='输入关键词，搜索划线和想法'><button>搜索</button></form><div id='results' class='res empty'>输入关键词后搜索。</div></section>
+<section><h2>搜索 <span class='smode' id='smode'><button data-m='notes' class='on' type='button'>本地笔记</button><button data-m='store' type='button'>书城</button></span></h2><form id='search'><input id='q' placeholder='输入关键词，搜索划线和想法'><button>搜索</button></form><div id='results' class='res empty'>输入关键词后搜索。</div></section>
 <section><h2>书架 <span class='n' id='shelf-n'></span></h2>
 <div class='toolbar'>
 <div class='seg' id='view-seg'><button data-v='grid' class='on' type='button'>封面</button><button data-v='list' type='button'>列表</button></div>
@@ -267,16 +276,25 @@ async function doSearch(page){const q=curQ;if(!q)return;const res=e('results');
  const html=d.rows.map(x=>`<div class=row onclick="openBook('${esc(x.book_id)}')" style=cursor:pointer><div class=h><span class=tag>${esc(x.kind)}</span><b>${esc(x.title||'未命名')}</b> · ${esc(x.chapter||'')}<span style=float:right class=date>${fmtDate(x.created)}</span></div>${esc(x.content||'')}</div>`).join('')+`<div class=pager><button id=prev type=button ${d.page<=1?'disabled':''}>上一页</button><span>第 ${d.page} / ${pages} 页 · 共 ${d.total} 条</span><button id=next type=button ${d.page>=pages?'disabled':''}>下一页</button></div>`;
  res.className='res';res.innerHTML=html;
  e('prev')&&(e('prev').onclick=()=>doSearch(curPage-1));e('next')&&(e('next').onclick=()=>doSearch(curPage+1));}
-e('search').onsubmit=ev=>{ev.preventDefault();curQ=e('q').value.trim();if(!curQ)return;doSearch(1)};
+let searchMode='notes',storeBooks=[];
+async function doStoreSearch(){const q=curQ,res=e('results');res.className='res empty';res.textContent='搜索书城中…';
+ const d=await fetch('/api/store-search?q='+encodeURIComponent(q)).then(r=>r.json());
+ if(d.error){res.className='res';res.innerHTML=`<div class="res empty">${esc(d.error)}</div>`;return}
+ storeBooks=d.books||[];
+ if(!storeBooks.length){res.className='res empty';res.textContent='未找到相关书籍。';return}
+ res.className='grid';
+ res.innerHTML=storeBooks.map((x,i)=>`<div class=book data-i='${i}'><div class=cover>${cover(x)}</div><div class=meta><div class=t>${esc(x.title||'未命名')}</div><div class=a>${esc(x.author||'—')}</div></div></div>`).join('');
+ res.querySelectorAll('.book').forEach(el=>el.onclick=()=>{const x=storeBooks[+el.dataset.i];openBook(x.book_id,{title:x.title,author:x.author,cover:x.cover})});
+}
+e('smode').querySelectorAll('button').forEach(b=>b.onclick=()=>{searchMode=b.dataset.m;e('smode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));e('q').placeholder=searchMode==='store'?'搜索微信读书书城（书名 / 作者）':'输入关键词，搜索划线和想法';e('results').className='res empty';e('results').textContent='输入关键词后搜索。'});
+e('search').onsubmit=ev=>{ev.preventDefault();curQ=e('q').value.trim();if(!curQ)return;searchMode==='store'?doStoreSearch():doSearch(1)};
 const modal=e('modal');
 function closeBook(){modal.classList.remove('show');document.body.style.overflow=''}
 modal.onclick=ev=>{if(ev.target===modal)closeBook()};
 document.addEventListener('keydown',ev=>{if(ev.key==='Escape')closeBook()});
 function star(n){n=n||0;return n>0?'★'.repeat(Math.min(n,5)):''}
-async function openBook(id){if(!id)return;modal.classList.add('show');document.body.style.overflow='hidden';e('sheet').innerHTML='<div class=note-empty>加载中…</div>';
- let d=await fetch('/api/book?book_id='+encodeURIComponent(id)).then(r=>r.json());if(d.error){e('sheet').innerHTML='<div class=note-empty>加载失败。</div>';return}
- const b=d.book,p=Math.max(0,Math.min(100,b.reading_progress||0));
- let body='';
+function renderMine(d){
+ let body='<div class=bhtools><button id=copymd class=ghost>复制 Markdown</button></div><div class=notes>';
  const reviews=d.thoughts.filter(t=>t.is_book_review),ideas=d.thoughts.filter(t=>!t.is_book_review);
  if(reviews.length){body+=`<div class=ch>书评</div>`+reviews.map(t=>`<div class=th><div class=lb>书评 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span></div></div>`).join('')}
  const ideaByCh={};ideas.forEach(t=>{(ideaByCh[t.chapter_uid]=ideaByCh[t.chapter_uid]||[]).push(t)});
@@ -286,11 +304,35 @@ async function openBook(id){if(!id)return;modal.classList.add('show');document.b
  groups.forEach(g=>{body+=`<div class=ch>${esc(g.title||'未分章')}</div>`;
    g.items.forEach(h=>{body+=`<div class=hl data-c='${h.color_style||0}'><div class=tx>${esc(h.mark_text||'')}</div><div class=ft><span class=date>${fmtDate(h.create_time)}</span></div></div>`});
    (ideaByCh[g.uid]||[]).forEach(t=>{body+=`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span></div></div>`})});
- // 想法所在章节没有划线时，单独补在末尾
  Object.keys(ideaByCh).forEach(uid=>{if(!groups.some(g=>String(g.uid)===String(uid))){body+=`<div class=ch>${esc(ideaByCh[uid][0].chapter_name||'想法')}</div>`+ideaByCh[uid].map(t=>`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span></div></div>`).join('')}});
- e('sheet').innerHTML=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div><div class=st><span class=chip>进度 ${p}%</span><span class=chip>划线 ${d.highlights.length}</span><span class=chip>想法 ${ideas.length+reviews.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}</div></div><button class=x title=关闭>×</button></div><div class=bhtools><button id=copymd class=ghost>复制 Markdown</button></div><div class=notes>${body}</div>`;
+ return body+'</div>';
+}
+async function openBook(id,store){if(!id)return;modal.classList.add('show');document.body.style.overflow='hidden';e('sheet').innerHTML='<div class=note-empty>加载中…</div>';
+ let mine=null;
+ if(!store){const d=await fetch('/api/book?book_id='+encodeURIComponent(id)).then(r=>r.json());if(!d.error)mine=d}
+ const b=mine?mine.book:(store||{}),p=Math.max(0,Math.min(100,b.reading_progress||0));
+ const tabs=mine?['mine','popular','reviews']:['popular','reviews'];const LABEL={mine:'我的笔记',popular:'热门划线',reviews:'书评'};
+ const st=mine?`<div class=st><span class=chip>进度 ${p}%</span><span class=chip>划线 ${mine.highlights.length}</span><span class=chip>想法 ${mine.thoughts.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}</div>`:'';
+ const header=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div>${st}</div><button class=x title=关闭>×</button></div>`;
+ const tabbar=`<div class=tabs>${tabs.map((t,i)=>`<button data-t='${t}' type=button class='${i===0?'on':''}'>${LABEL[t]}</button>`).join('')}</div>`;
+ e('sheet').innerHTML=header+tabbar+`<div id=tabwrap></div>`;
  e('sheet').querySelector('.x').onclick=closeBook;
- e('copymd').onclick=()=>{navigator.clipboard.writeText(toMarkdown(d)).then(()=>{e('copymd').textContent='已复制 ✓';setTimeout(()=>e('copymd').textContent='复制 Markdown',1500)})};
+ const cache={};
+ async function show(t){
+  e('sheet').querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
+  const wrap=e('tabwrap');
+  if(t==='mine'){wrap.innerHTML=renderMine(mine);const c=e('copymd');if(c)c.onclick=()=>navigator.clipboard.writeText(toMarkdown(mine)).then(()=>{c.textContent='已复制 ✓';setTimeout(()=>c.textContent='复制 Markdown',1500)});return}
+  if(cache[t]){wrap.innerHTML=cache[t];return}
+  wrap.innerHTML='<div class=note-empty>加载中…</div>';
+  const data=await fetch(`/api/book-extra?book_id=${encodeURIComponent(id)}&kind=${t}`).then(r=>r.json());
+  if(data.error){wrap.innerHTML=`<div class=note-empty>${esc(data.error)}</div>`;return}
+  let html;
+  if(t==='popular'){const its=data.items||[];html='<div class=notes>'+(its.length?its.map(x=>`<div class=pop><div class=tx>${esc(x.markText||'')}</div><div class=ft><span>${esc(x.chapter||'')}</span><span>${x.count} 人划线</span></div></div>`).join(''):'<div class=note-empty>暂无热门划线。</div>')+'</div>'}
+  else{const rs=data.reviews||[];html='<div class=notes>'+(rs.length?rs.map(x=>`<div class=rv><div class=au><span>${esc(x.author||'匿名')} ${star(x.star)}</span><span>${x.likes} 赞</span></div><div class=tx>${esc(x.content||'')}</div></div>`).join(''):'<div class=note-empty>暂无公开书评。</div>')+'</div>'}
+  cache[t]=html;wrap.innerHTML=html;
+ }
+ e('sheet').querySelectorAll('.tabs button').forEach(btn=>btn.onclick=()=>show(btn.dataset.t));
+ show(tabs[0]);
 }
 function toMarkdown(d){const b=d.book;let m=`# ${b.title||'未命名'}\n\n> ${b.author||''}${b.category?' · '+b.category:''}\n\n`;
  const reviews=d.thoughts.filter(t=>t.is_book_review),ideas=d.thoughts.filter(t=>!t.is_book_review);
@@ -393,6 +435,62 @@ def make_handler(db_path: Path):
                             "thoughts": [dict(row) for row in thoughts],
                         },
                     )
+                elif parsed.path == "/api/book-extra":
+                    # Live proxy to the WeRead Skill: other readers' popular highlights / public reviews.
+                    book_id = query.get("book_id", [""])[0].strip()
+                    kind = query.get("kind", ["popular"])[0]
+                    if not book_id:
+                        _json(self, {"error": "缺少 book_id"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    try:
+                        if kind == "reviews":
+                            data = Gateway().call("/review/list", bookId=book_id, count=20)
+                            reviews = []
+                            for wrapper in data.get("reviews", []):
+                                review = (wrapper.get("review") or {}).get("review") or {}
+                                content = review.get("content")
+                                if not content:
+                                    continue
+                                reviews.append({
+                                    "content": content,
+                                    "star": int((review.get("star") or 0) / 20),
+                                    "author": (review.get("author") or {}).get("name"),
+                                    "likes": int((wrapper.get("review") or {}).get("likesCount") or 0),
+                                })
+                            _json(self, {"reviews": reviews})
+                        else:
+                            data = Gateway().call("/book/bestbookmarks", bookId=book_id)
+                            chapters = {c.get("chapterUid"): c.get("title") for c in (data.get("chapters") or [])}
+                            items = [
+                                {"markText": it.get("markText"), "count": it.get("totalCount", 0),
+                                 "chapter": chapters.get(it.get("chapterUid"))}
+                                for it in (data.get("items") or []) if it.get("markText")
+                            ]
+                            _json(self, {"items": items})
+                    except Exception as error:  # noqa: BLE001 — surfaced to the page
+                        _json(self, {"error": str(error)})
+                elif parsed.path == "/api/store-search":
+                    keyword = query.get("q", [""])[0].strip()
+                    if not keyword:
+                        _json(self, {"books": []})
+                        return
+                    try:
+                        data = Gateway().call("/store/search", keyword=keyword, count=20)
+                        books = []
+                        for tab in data.get("results", []):
+                            for entry in (tab.get("books") or []):
+                                info = entry.get("bookInfo") or {}
+                                if info.get("bookId"):
+                                    books.append({"book_id": info["bookId"], "title": info.get("title"),
+                                                  "author": info.get("author"), "cover": info.get("cover")})
+                        seen, unique = set(), []
+                        for book in books:
+                            if book["book_id"] not in seen:
+                                seen.add(book["book_id"])
+                                unique.append(book)
+                        _json(self, {"books": unique[:24]})
+                    except Exception as error:  # noqa: BLE001 — surfaced to the page
+                        _json(self, {"error": str(error)})
                 elif parsed.path == "/api/search":
                     term = query.get("q", [""])[0].strip()
                     if not term:
