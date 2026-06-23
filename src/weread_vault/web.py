@@ -69,6 +69,29 @@ def weread_url(book_id: str) -> str:
     return "https://weread.qq.com/web/bookDetail/" + result
 
 
+def _session_distribution(conn: sqlite3.Connection, gap: int = 1800) -> dict[str, object]:
+    """Infer reading sessions from highlight timestamps: a gap over `gap` seconds starts a new
+    session; a session's span (first→last highlight) approximates its length. This is a proxy —
+    pure reading without highlights is invisible — but it reveals fragmented vs. long-form reading.
+    """
+    times = [row[0] for row in conn.execute(
+        "SELECT create_time FROM highlights WHERE create_time IS NOT NULL ORDER BY create_time"
+    )]
+    spans: list[int] = []
+    if times:
+        start = previous = times[0]
+        for current in times[1:]:
+            if current - previous > gap:
+                spans.append(previous - start)
+                start = current
+            previous = current
+        spans.append(previous - start)
+    buckets = [("≤5 分钟", 0, 300), ("5–15 分钟", 300, 900), ("15–30 分钟", 900, 1800),
+               ("30–60 分钟", 1800, 3600), (">60 分钟", 3600, float("inf"))]
+    distribution = [{"label": label, "count": sum(1 for s in spans if lo <= s < hi)} for label, lo, hi in buckets]
+    return {"total": len(spans), "distribution": distribution}
+
+
 def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
     rows = conn.execute(
         """SELECT mode, payload FROM reading_stats
@@ -102,6 +125,7 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
     }
     return {
         "hasData": True,
+        "sessions": _session_distribution(conn),
         "overall": {
             "totalReadTime": overall.get("totalReadTime", 0),
             "readDays": overall.get("readDays", 0),
@@ -135,6 +159,10 @@ main{max-width:1080px;margin:0 auto;padding:40px 22px 72px}
 .nav button{text-align:left;background:transparent;color:var(--fg);border:0;padding:10px 12px;border-radius:9px;font:inherit;font-size:14px;cursor:pointer;font-weight:500}
 .nav button:hover{background:color-mix(in srgb,var(--brand) 8%,transparent)}
 .nav button.on{background:color-mix(in srgb,var(--brand) 13%,transparent);color:var(--brand);font-weight:600}
+.ic{width:16px;height:16px;display:inline-block;vertical-align:-3px;flex:0 0 auto}
+.nav button{display:flex;align-items:center}.nav button .ic{margin-right:10px;width:17px;height:17px}
+.cp{display:inline-flex;align-items:center;justify-content:center}.cp .ic{width:15px;height:15px;vertical-align:0}
+.wr{display:inline-flex;align-items:center}.wr .ic{width:13px;height:13px;margin-right:5px;vertical-align:0}
 .side-foot{margin-top:auto;padding:10px;font-size:12px;border-top:1px solid var(--line)}
 .content{flex:1;min-width:0;max-width:1000px;padding:30px 32px 72px}
 .content h2:first-child{margin-top:0}
@@ -239,10 +267,10 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <div class='brand'>WeRead <span class='dot'>Vault</span></div>
 <div class='tagline'>为 AI 工具打造的微信读书笔记库</div>
 <nav class='nav'>
-<button data-view='shelf' class='on' type='button'>📚 书架</button>
-<button data-view='stats' type='button'>📊 阅读统计</button>
-<button data-view='search' type='button'>🔍 搜索 / 书城</button>
-<button data-view='sync' type='button'>⚙️ 同步设置</button>
+<button data-view='shelf' class='on' type='button'>书架</button>
+<button data-view='stats' type='button'>阅读统计</button>
+<button data-view='search' type='button'>搜索 / 书城</button>
+<button data-view='sync' type='button'>同步设置</button>
 </nav>
 <div class='side-foot'><span id='api-key-status' class='hint'>检查 API Key…</span></div>
 </aside>
@@ -271,6 +299,13 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <div id='modal' class='modal'><div class='sheet' id='sheet'></div></div>
 <script>
 const e=x=>document.getElementById(x),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const SVG=p=>`<svg class=ic viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round>${p}</svg>`;
+const ICO={book:SVG("<path d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/><path d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/>"),
+ stats:SVG("<line x1=12 y1=20 x2=12 y2=10/><line x1=18 y1=20 x2=18 y2=4/><line x1=6 y1=20 x2=6 y2=16/>"),
+ search:SVG("<circle cx=11 cy=11 r=8/><line x1=21 y1=21 x2=16.65 y2=16.65/>"),
+ sync:SVG("<polyline points='23 4 23 10 17 10'/><polyline points='1 20 1 14 7 14'/><path d='M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15'/>"),
+ copy:SVG("<rect x=9 y=9 width=13 height=13 rx=2 ry=2/><path d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/>"),
+ ext:SVG("<path d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/><polyline points='15 3 21 3 21 9'/><line x1=10 y1=14 x2=21 y2=3/>")};
 const PAL=[['#155eef','#7c3aed'],['#0891b2','#0e7490'],['#db2777','#9d174d'],['#ea580c','#b45309'],['#059669','#047857'],['#4f46e5','#7c3aed'],['#dc2626','#991b1b'],['#0d9488','#115e59']];
 function hue(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return PAL[h%PAL.length]}
 function cover(x){const t=x.title||'未命名',fallback=ph(t);if(x.cover){return fallback+`<img loading=lazy src="${esc(x.cover)}" alt="${esc(t)}" onerror="this.remove()">`}return fallback}
@@ -364,15 +399,15 @@ function star(n){n=n||0;return n>0?'★'.repeat(Math.min(n,5)):''}
 function renderMine(d){
  let body='<div class=bhtools><button id=copymd class=ghost>复制 Markdown</button></div><div class=notes>';
  const reviews=d.thoughts.filter(t=>t.is_book_review),ideas=d.thoughts.filter(t=>!t.is_book_review);
- if(reviews.length){body+=`<div class=ch>书评</div>`+reviews.map(t=>`<div class=th><div class=lb>书评 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>复制</button></div></div>`).join('')}
+ if(reviews.length){body+=`<div class=ch>书评</div>`+reviews.map(t=>`<div class=th><div class=lb>书评 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`).join('')}
  const ideaByCh={};ideas.forEach(t=>{(ideaByCh[t.chapter_uid]=ideaByCh[t.chapter_uid]||[]).push(t)});
  let curCh=null;const groups=[];
  d.highlights.forEach(h=>{const c=h.chapter_uid;if(c!==curCh){curCh=c;groups.push({uid:c,title:h.chapter_title,items:[]})}groups[groups.length-1].items.push(h)});
  if(!groups.length&&!ideas.length&&!reviews.length){body+='<div class=note-empty>这本书还没有划线或想法。</div>'}
  groups.forEach(g=>{body+=`<div class=ch>${esc(g.title||'未分章')}</div>`;
-   g.items.forEach(h=>{body+=`<div class=hl data-c='${h.color_style||0}'><div class=tx>${esc(h.mark_text||'')}</div><div class=ft><span class=date>${fmtDate(h.create_time)}</span><button class=cp type=button title=复制>复制</button></div></div>`});
-   (ideaByCh[g.uid]||[]).forEach(t=>{body+=`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>复制</button></div></div>`})});
- Object.keys(ideaByCh).forEach(uid=>{if(!groups.some(g=>String(g.uid)===String(uid))){body+=`<div class=ch>${esc(ideaByCh[uid][0].chapter_name||'想法')}</div>`+ideaByCh[uid].map(t=>`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>复制</button></div></div>`).join('')}});
+   g.items.forEach(h=>{body+=`<div class=hl data-c='${h.color_style||0}'><div class=tx>${esc(h.mark_text||'')}</div><div class=ft><span class=date>${fmtDate(h.create_time)}</span><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`});
+   (ideaByCh[g.uid]||[]).forEach(t=>{body+=`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`})});
+ Object.keys(ideaByCh).forEach(uid=>{if(!groups.some(g=>String(g.uid)===String(uid))){body+=`<div class=ch>${esc(ideaByCh[uid][0].chapter_name||'想法')}</div>`+ideaByCh[uid].map(t=>`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`).join('')}});
  return body+'</div>';
 }
 async function openBook(id,store){if(!id)return;modal.classList.add('show');document.body.style.overflow='hidden';e('sheet').innerHTML='<div class=note-empty>加载中…</div>';
@@ -383,7 +418,7 @@ async function openBook(id,store){if(!id)return;modal.classList.add('show');docu
  const meta=mine?`${b.rating?`<span class=chip>推荐 ${(b.rating/10).toFixed(1)}%</span>`:''}${b.word_count?`<span class=chip>${(b.word_count/10000).toFixed(1)} 万字</span>`:''}${b.publisher?`<span class=chip>${esc(b.publisher)}</span>`:''}`:'';
  const st=mine?`<div class=st><span class=chip>进度 ${p}%</span><span class=chip>划线 ${mine.highlights.length}</span><span class=chip>想法 ${mine.thoughts.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}${meta}</div>`:'';
  const intro=mine&&b.intro?`<div class=bkintro>${esc(b.intro)}</div>`:'';
- const header=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div>${st}${intro}</div><div class=bhx>${b.weread_url?`<a class=wr href='${esc(b.weread_url)}' target=_blank rel=noopener title='在微信读书中打开'>微信读书 ↗</a>`:''}<button class=x type=button title=关闭>×</button></div></div>`;
+ const header=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div>${st}${intro}</div><div class=bhx>${b.weread_url?`<a class=wr href='${esc(b.weread_url)}' target=_blank rel=noopener title='在微信读书中打开'>${ICO.ext}微信读书</a>`:''}<button class=x type=button title=关闭>×</button></div></div>`;
  const tabbar=`<div class=tabs>${tabs.map((t,i)=>`<button data-t='${t}' type=button class='${i===0?'on':''}'>${LABEL[t]}</button>`).join('')}</div>`;
  e('sheet').innerHTML=header+tabbar+`<div id=tabwrap></div>`;
  e('sheet').querySelector('.x').onclick=closeBook;
@@ -398,8 +433,8 @@ async function openBook(id,store){if(!id)return;modal.classList.add('show');docu
   const data=await fetch(`/api/book-extra?book_id=${encodeURIComponent(id)}&kind=${t}`).then(r=>r.json());
   if(data.error){wrap.innerHTML=`<div class=note-empty>${esc(data.error)}</div>`;return}
   let html;
-  if(t==='popular'){const its=data.items||[];html='<div class=notes>'+(its.length?its.map(x=>`<div class=pop><div class=tx>${esc(x.markText||'')}</div><div class=ft><span>${esc(x.chapter||'')}</span><span>${x.count} 人划线 · <button class=cp type=button title=复制>复制</button></span></div></div>`).join(''):'<div class=note-empty>暂无热门划线。</div>')+'</div>'}
-  else{const rs=data.reviews||[];html='<div class=notes>'+(rs.length?rs.map(x=>`<div class=rv><div class=au><span>${esc(x.author||'匿名')} ${star(x.star)}</span><span>${x.likes} 赞</span></div><div class=tx>${esc(x.content||'')}</div><div class=ft><button class=cp type=button title=复制>复制</button></div></div>`).join(''):'<div class=note-empty>暂无公开书评。</div>')+'</div>'}
+  if(t==='popular'){const its=data.items||[];html='<div class=notes>'+(its.length?its.map(x=>`<div class=pop><div class=tx>${esc(x.markText||'')}</div><div class=ft><span>${esc(x.chapter||'')}</span><span>${x.count} 人划线 · <button class=cp type=button title=复制>${ICO.copy}</button></span></div></div>`).join(''):'<div class=note-empty>暂无热门划线。</div>')+'</div>'}
+  else{const rs=data.reviews||[];html='<div class=notes>'+(rs.length?rs.map(x=>`<div class=rv><div class=au><span>${esc(x.author||'匿名')} ${star(x.star)}</span><span>${x.likes} 赞</span></div><div class=tx>${esc(x.content||'')}</div><div class=ft><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`).join(''):'<div class=note-empty>暂无公开书评。</div>')+'</div>'}
   cache[t]=html;wrap.innerHTML=html;
  }
  e('sheet').querySelectorAll('.tabs button').forEach(btn=>btn.onclick=()=>show(btn.dataset.t));
@@ -418,7 +453,7 @@ function barChart(data,opts){opts=opts||{};const W=opts.w||520,H=opts.h||140,pad
  const bars=data.map((d,i)=>{const bh=(H-26)*(d.value/max);const x=pad+i*step+(step-bw)/2,y=H-18-bh;
   return `<rect x='${x.toFixed(1)}' y='${y.toFixed(1)}' width='${bw.toFixed(1)}' height='${Math.max(bh,1).toFixed(1)}' rx='3' fill='var(--brand)'><title>${esc(String(d.label||''))} ${fmtHours(d.value)}h</title></rect>`+(d.tick!==''?`<text x='${(x+bw/2).toFixed(1)}' y='${H-5}' text-anchor='middle' class='caxis'>${esc(String(d.tick))}</text>`:'')}).join('');
  return `<svg viewBox='0 0 ${W} ${H}' class='chart' preserveAspectRatio='xMidYMid meet'>${bars}</svg>`}
-document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{const v=b.dataset.view;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('.view').forEach(s=>{s.hidden=s.dataset.view!==v})});
+document.querySelectorAll('.nav button').forEach(b=>{const k={shelf:'book',stats:'stats',search:'search',sync:'sync'}[b.dataset.view];if(k)b.insertAdjacentHTML('afterbegin',ICO[k]);b.onclick=()=>{const v=b.dataset.view;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('.view').forEach(s=>{s.hidden=s.dataset.view!==v})}});
 async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());const sec=e('stats');
  if(!d.hasData){sec.className='empty';sec.innerHTML='暂无统计数据，先到「同步设置」同步一次。';return}
  const o=d.overall;e('stats-word').textContent=o.preferCategoryWord||'';
@@ -429,7 +464,9 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  const cmax=Math.max(1,...o.categories.map(c=>c.seconds));
  const cats=`<div class=panel><h3>偏好分类 Top</h3>${o.categories.map(c=>`<div class=hbar><span class=nm>${esc(c.title||'')}</span><span class=tk><i style="width:${(c.seconds/cmax*100).toFixed(0)}%"></i></span><span class=vv>${fmtHours(c.seconds)}h</span></div>`).join('')}</div>`;
  const auth=`<div class=panel><h3>常读作者 Top</h3>${o.authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`;
- sec.className='';sec.innerHTML=head+`<div class=stats-grid>${yc}${hc}</div><div class=stats-grid>${cats}${auth}</div>`}
+ const sd=d.sessions||{distribution:[],total:0},smax=Math.max(1,...sd.distribution.map(x=>x.count));
+ const sess=`<div class=panel><h3>单次阅读时长分布 · 据划线时间推断，共 ${sd.total} 次</h3>${sd.distribution.map(x=>`<div class=hbar><span class=nm>${esc(x.label)}</span><span class=tk><i style="width:${(x.count/smax*100).toFixed(0)}%"></i></span><span class=vv>${x.count} 次</span></div>`).join('')}<div style='font-size:11px;color:var(--muted);margin-top:10px'>同一时段连续划线视为一次阅读，跨度即时长；纯阅读未划线的部分无法计入，仅供参考“碎片 vs 整片”的倾向。</div></div>`;
+ sec.className='';sec.innerHTML=head+`<div class=stats-grid>${yc}${hc}</div><div style='margin-top:14px'>${sess}</div><div class=stats-grid>${cats}${auth}</div>`}
 loadSettings();load();loadStats();</script></body></html>""".encode("utf-8")
 
 
