@@ -58,8 +58,8 @@ class SyncService:
     def stats(self) -> int:
         return self._run("stats", self._sync_stats)
 
-    def info(self, limit: int | None = None) -> int:
-        return self._run("info", lambda: self._sync_book_info(limit))
+    def info(self, limit: int | None = None, refresh: bool = False) -> int:
+        return self._run("info", lambda: self._sync_book_info(limit, refresh))
 
     def shelf(self) -> int:
         return self._run("shelf", self._sync_shelf)
@@ -104,10 +104,12 @@ class SyncService:
                  item.get("updateTime") or now, now),
             )
 
-    def _sync_book_info(self, limit: int | None) -> int:
+    def _sync_book_info(self, limit: int | None, refresh: bool = False) -> int:
         # Backfill rich metadata only for books not yet enriched (rating IS NULL), so this is
         # incremental: a one-time pass after upgrade, then effectively free on later runs.
-        sql = "SELECT book_id, title FROM books WHERE rating IS NULL ORDER BY sort DESC"
+        # refresh=True re-fetches every book (e.g. to backfill a newly added field like intro).
+        where = "" if refresh else "WHERE rating IS NULL"
+        sql = f"SELECT book_id, title FROM books {where} ORDER BY sort DESC"
         if limit is not None:
             sql += f" LIMIT {int(limit)}"
         rows = self.conn.execute(sql).fetchall()
@@ -119,10 +121,11 @@ class SyncService:
                 info = self.gateway.call("/book/info", bookId=book["book_id"])
                 with self.conn:
                     self.conn.execute(
-                        """UPDATE books SET rating=?, rating_count=?, word_count=?, publisher=?, isbn=?, translator=?
-                        WHERE book_id=?""",
+                        """UPDATE books SET rating=?, rating_count=?, word_count=?, publisher=?, isbn=?,
+                        translator=?, intro=COALESCE(NULLIF(?,''), intro) WHERE book_id=?""",
                         (int(info.get("newRating") or 0), info.get("newRatingCount"), info.get("wordCount"),
-                         info.get("publisher"), info.get("isbn"), info.get("translator"), book["book_id"]),
+                         info.get("publisher"), info.get("isbn"), info.get("translator"),
+                         info.get("intro"), book["book_id"]),
                     )
                 done += 1
                 self.report(f"书籍信息：[{index}/{total}] {book['title'] or book['book_id']}")

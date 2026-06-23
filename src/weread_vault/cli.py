@@ -49,9 +49,14 @@ def parser() -> argparse.ArgumentParser:
     sync = sub.add_parser("sync", help="从微信读书同步到本地库")
     sync.add_argument("scope", nargs="?", choices=("all", "shelf", "books", "notes", "stats", "info"), default="all")
     sync.add_argument("--full-notes", action="store_true", help="忽略变更水位，重新同步所有有笔记的书")
+    sync.add_argument("--refresh", action="store_true", help="sync info 专用：重抓所有书的富信息（含简介），不只补缺")
     sync.add_argument("--limit", type=int, help="最多同步多少本笔记书；适合首次测试或分批同步")
     sub.add_parser("status", help="显示本地库状态")
     sub.add_parser("stats", help="输出阅读统计 JSON（供 AI 分析）")
+    query = sub.add_parser("query", help="对本地库执行只读 SQL（供 AI 灵活分析）")
+    query.add_argument("sql", nargs="?", help="SELECT / WITH 语句；省略则等同 --schema")
+    query.add_argument("--schema", action="store_true", help="打印所有表与列，便于 AI 写查询")
+    query.add_argument("--limit", type=int, default=500, help="最多返回行数（默认 500）")
     export = sub.add_parser("export", help="导出本地笔记")
     export_sub = export.add_subparsers(dest="export_command", required=True)
     markdown = export_sub.add_parser("markdown", help="导出为 Markdown")
@@ -128,7 +133,7 @@ def main(argv: list[str] | None = None) -> None:
                 elif args.scope == "stats":
                     count = service.stats()
                 elif args.scope == "info":
-                    count = service.info(args.limit)
+                    count = service.info(args.limit, args.refresh)
                 else:
                     count = service.all(args.full_notes, args.limit)
             print(f"同步完成：{count}")
@@ -138,6 +143,27 @@ def main(argv: list[str] | None = None) -> None:
             _require_db(db_path)
             with connect(db_path) as conn:
                 _emit_json(_reading_stats(conn))
+        elif args.command == "query":
+            _require_db(db_path)
+            # Open read-only so any write attempt fails at the SQLite level, not just by our check.
+            readonly = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            readonly.row_factory = sqlite3.Row
+            try:
+                if args.schema or not args.sql:
+                    schema = {}
+                    for (name,) in readonly.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+                    ):
+                        schema[name] = [row["name"] for row in readonly.execute(f"PRAGMA table_info({name})")]
+                    _emit_json(schema)
+                else:
+                    sql = args.sql.strip().rstrip(";")
+                    if not sql.lower().startswith(("select", "with")):
+                        raise WereadVaultError("只允许只读查询（SELECT / WITH 开头）。")
+                    rows = readonly.execute(sql).fetchmany(max(1, args.limit))
+                    _emit_json([dict(row) for row in rows])
+            finally:
+                readonly.close()
         elif args.command == "export":
             _require_db(db_path)
             with connect(db_path) as conn:

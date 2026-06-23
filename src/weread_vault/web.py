@@ -91,6 +91,10 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
         {"name": a.get("name"), "count": a.get("count", 0), "readTime": a.get("readTime", "")}
         for a in (overall.get("preferAuthor") or [])
     ][:8]
+    longest = [
+        {"title": (item.get("book") or {}).get("title"), "readSeconds": item.get("readTime", 0)}
+        for item in (overall.get("readLongest") or [])
+    ][:10]
     periods = {
         mode: {"totalReadTime": by_mode[mode].get("totalReadTime", 0), "readDays": by_mode[mode].get("readDays", 0)}
         for mode in ("weekly", "monthly", "annually")
@@ -107,6 +111,7 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
             "byYear": by_year,
             "categories": categories,
             "authors": authors,
+            "longest": longest,
             "preferCategoryWord": overall.get("preferCategoryWord", ""),
             "preferTimeWord": overall.get("preferTimeWord", ""),
         },
@@ -163,7 +168,8 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .hbar .nm{width:92px;flex:0 0 92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--fg)}
 .hbar .tk{flex:1;height:9px;border-radius:5px;background:var(--line);overflow:hidden}.hbar .tk i{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--brand2))}
 .hbar .vv{width:70px;flex:0 0 70px;text-align:right;font-size:12px;color:var(--muted)}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:20px 16px}
+.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:20px 16px}
+@media(max-width:860px){.grid{grid-template-columns:repeat(4,1fr)}}
 .list{display:flex;flex-direction:column;gap:8px}
 .lrow{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 14px;cursor:pointer;box-shadow:var(--shadow)}
 .lrow:hover{border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
@@ -200,7 +206,9 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .bh{display:flex;gap:18px;padding:24px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
 .bh .cover{width:84px;flex:0 0 84px}
 .bh .bi{flex:1;min-width:0}.bh h3{margin:0 0 4px;font-size:19px;letter-spacing:-.01em}.bh .a{color:var(--muted);font-size:13px}
-.bh .st{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}.chip{font-size:12px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+.bh .st{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.bkintro{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.55;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+.bkintro.open{-webkit-line-clamp:unset}.chip{font-size:12px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
 .bh .x{align-self:flex-start;background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:9px;width:34px;height:34px;font-size:18px;line-height:1;padding:0;cursor:pointer}
 .bhtools{display:flex;gap:8px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--card)}.bhtools button{padding:8px 14px;font-size:13px}
 .notes{padding:8px 24px 36px}
@@ -224,7 +232,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .wr{font-size:12px;color:var(--brand);text-decoration:none;border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line));border-radius:8px;padding:6px 10px;white-space:nowrap}.wr:hover{background:color-mix(in srgb,var(--brand) 10%,transparent)}
 .smode{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;vertical-align:middle}
 .smode button{background:var(--card);border:0;color:var(--muted);padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}.smode button.on{background:var(--brand);color:#fff}
-@media(max-width:620px){.cards{grid-template-columns:1fr}.grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:16px 12px}.sheet{margin:0;border-radius:0;min-height:100vh}}
+@media(max-width:620px){.cards{grid-template-columns:1fr}.grid{grid-template-columns:repeat(3,1fr);gap:16px 12px}.sheet{margin:0;border-radius:0;min-height:100vh}}
 </style></head>
 <body><div class='layout'>
 <aside class='sidebar'>
@@ -269,11 +277,12 @@ function cover(x){const t=x.title||'未命名',fallback=ph(t);if(x.cover){return
 function ph(t){const[a,b]=hue(t);return `<div class=ph style="background:linear-gradient(150deg,${a},${b})">${esc(t).slice(0,18)}</div>`}
 let allBooks=[],curView='grid',curSort='recent',curCat='',shelfPage=1;const SHELF_PAGE=24;
 const topCat=c=>c?String(c).split('-')[0]:'未分类';
+const isMp=x=>String(x.book_id||'').startsWith('MP_');
 const SORTERS={recent:(a,b)=>(b.sort||0)-(a.sort||0),progress:(a,b)=>(b.reading_progress||0)-(a.reading_progress||0),notes:(a,b)=>(b.total_notes||0)-(a.total_notes||0),rating:(a,b)=>(b.rating||0)-(a.rating||0),words:(a,b)=>(b.word_count||0)-(a.word_count||0),title:(a,b)=>String(a.title||'').localeCompare(String(b.title||''),'zh')};
 function renderShelf(){
  const sh=e('shelf'),pg=e('shelf-pager');pg.innerHTML='';
  if(!allBooks.length){sh.className='empty';sh.innerHTML='尚未同步数据。点上方“同步”按钮拉取你的书架。';e('shelf-n').textContent='';return}
- let arr=allBooks.filter(x=>!curCat||topCat(x.category)===curCat).slice().sort(SORTERS[curSort]||SORTERS.recent);
+ let arr=allBooks.filter(x=>{if(curCat==='__mp__')return isMp(x);if(isMp(x))return false;return !curCat||topCat(x.category)===curCat}).slice().sort(SORTERS[curSort]||SORTERS.recent);
  if(!arr.length){sh.className='empty';sh.innerHTML='该分类下没有书。';e('shelf-n').textContent='共 0 本';return}
  const pages=Math.max(1,Math.ceil(arr.length/SHELF_PAGE));
  if(shelfPage>pages)shelfPage=pages;if(shelfPage<1)shelfPage=1;
@@ -291,8 +300,9 @@ function renderShelf(){
 async function load(){
  let s=await fetch('/api/summary').then(r=>r.json());for(let k of ['books','highlights','thoughts'])e(k).textContent=(s[k]??0).toLocaleString();
  allBooks=await fetch('/api/books?limit=5000').then(r=>r.json());
- const cats=[...new Set(allBooks.map(x=>topCat(x.category)))].sort((a,b)=>a.localeCompare(b,'zh'));
- e('cat-sel').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+ const cats=[...new Set(allBooks.filter(x=>!isMp(x)).map(x=>topCat(x.category)))].sort((a,b)=>a.localeCompare(b,'zh'));
+ const mpCount=allBooks.filter(isMp).length;
+ e('cat-sel').innerHTML='<option value="">全部分类（不含公众号）</option>'+cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+(mpCount?`<option value="__mp__">📰 公众号 (${mpCount})</option>`:'');
  if(![...e('cat-sel').options].some(o=>o.value===curCat))curCat='';
  e('cat-sel').value=curCat;
  renderShelf();
@@ -372,10 +382,12 @@ async function openBook(id,store){if(!id)return;modal.classList.add('show');docu
  const tabs=mine?['mine','popular','reviews']:['popular','reviews'];const LABEL={mine:'我的笔记',popular:'热门划线',reviews:'书评'};
  const meta=mine?`${b.rating?`<span class=chip>推荐 ${(b.rating/10).toFixed(1)}%</span>`:''}${b.word_count?`<span class=chip>${(b.word_count/10000).toFixed(1)} 万字</span>`:''}${b.publisher?`<span class=chip>${esc(b.publisher)}</span>`:''}`:'';
  const st=mine?`<div class=st><span class=chip>进度 ${p}%</span><span class=chip>划线 ${mine.highlights.length}</span><span class=chip>想法 ${mine.thoughts.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}${meta}</div>`:'';
- const header=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div>${st}</div><div class=bhx>${b.weread_url?`<a class=wr href='${esc(b.weread_url)}' target=_blank rel=noopener title='在微信读书中打开'>微信读书 ↗</a>`:''}<button class=x type=button title=关闭>×</button></div></div>`;
+ const intro=mine&&b.intro?`<div class=bkintro>${esc(b.intro)}</div>`:'';
+ const header=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div>${st}${intro}</div><div class=bhx>${b.weread_url?`<a class=wr href='${esc(b.weread_url)}' target=_blank rel=noopener title='在微信读书中打开'>微信读书 ↗</a>`:''}<button class=x type=button title=关闭>×</button></div></div>`;
  const tabbar=`<div class=tabs>${tabs.map((t,i)=>`<button data-t='${t}' type=button class='${i===0?'on':''}'>${LABEL[t]}</button>`).join('')}</div>`;
  e('sheet').innerHTML=header+tabbar+`<div id=tabwrap></div>`;
  e('sheet').querySelector('.x').onclick=closeBook;
+ const bi=e('sheet').querySelector('.bkintro');if(bi)bi.onclick=()=>bi.classList.toggle('open');
  const cache={};
  async function show(t){
   e('sheet').querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
@@ -545,8 +557,10 @@ def make_handler(db_path: Path):
                             for entry in (tab.get("books") or []):
                                 info = entry.get("bookInfo") or {}
                                 if info.get("bookId"):
+                                    # Store covers come as low-res `s_`; request a sharper size.
+                                    cover = (info.get("cover") or "").replace("/s_", "/t7_")
                                     books.append({"book_id": info["bookId"], "title": info.get("title"),
-                                                  "author": info.get("author"), "cover": info.get("cover"),
+                                                  "author": info.get("author"), "cover": cover,
                                                   "weread_url": weread_url(info["bookId"])})
                         seen, unique = set(), []
                         for book in books:

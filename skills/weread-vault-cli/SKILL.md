@@ -111,6 +111,16 @@ weread-vault book <bookId> chapters     # chapter directory
 weread-vault api /book/readreviews bookId=<id> chapterUid=<uid> ...   # any endpoint, raw passthrough
 ```
 
+For questions about the user's own archived data, prefer the local database over the network — it is instant and offline:
+
+```bash
+weread-vault query --schema                 # list tables and columns first
+weread-vault query "SELECT title, rating FROM books WHERE rating>0 ORDER BY rating DESC LIMIT 10"
+weread-vault stats                          # aggregate reading stats incl. overall.longest (读得最久的书)
+```
+
+`query` runs read-only SQL (SELECT / WITH only; the database is opened read-only) and prints rows as JSON, so an agent can answer arbitrary analytical questions ("评分最高/笔记最多/某分类有哪些书"). Note: per-book reading **time** is only available in aggregate (`stats.overall.longest` = lifetime longest-read books); the official API does not expose per-book time for an arbitrary past year, so a question pinned to e.g. "2025 年读得最久的书" cannot be answered exactly.
+
 Use `weread-vault apis` first to discover endpoint names and parameters, then `weread-vault api <endpoint> key=value …` for anything without a named shortcut. Numeric values are sent as numbers; id-like params (`bookId`, `reviewId`) stay strings. The official Skill does not expose full book text, so original paragraphs around a highlight are not available — the closest signals are full-text search snippets and other readers' highlights on the same chapter.
 
 ## Export and backup
