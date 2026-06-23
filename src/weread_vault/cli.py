@@ -14,7 +14,7 @@ from .export import export_markdown
 from .gateway import Gateway
 from .integrations import export_flomo, export_notion
 from .sync import SyncService
-from .web import serve
+from .web import _reading_stats, serve
 
 
 def _path(value: str | None) -> Path:
@@ -51,6 +51,7 @@ def parser() -> argparse.ArgumentParser:
     sync.add_argument("--full-notes", action="store_true", help="忽略变更水位，重新同步所有有笔记的书")
     sync.add_argument("--limit", type=int, help="最多同步多少本笔记书；适合首次测试或分批同步")
     sub.add_parser("status", help="显示本地库状态")
+    sub.add_parser("stats", help="输出阅读统计 JSON（供 AI 分析）")
     export = sub.add_parser("export", help="导出本地笔记")
     export_sub = export.add_subparsers(dest="export_command", required=True)
     markdown = export_sub.add_parser("markdown", help="导出为 Markdown")
@@ -133,6 +134,10 @@ def main(argv: list[str] | None = None) -> None:
             print(f"同步完成：{count}")
         elif args.command == "status":
             _print_status(db_path)
+        elif args.command == "stats":
+            _require_db(db_path)
+            with connect(db_path) as conn:
+                _emit_json(_reading_stats(conn))
         elif args.command == "export":
             _require_db(db_path)
             with connect(db_path) as conn:

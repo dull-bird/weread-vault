@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import sqlite3
@@ -43,6 +44,29 @@ def _sync_counts(service: SyncService, mode: str) -> dict[str, int]:
     if mode == "full":
         return {"books": service.books(), "notes": service.notes(full=True), "stats": service.stats()}
     raise ValueError("未知同步模式。")
+
+
+def weread_url(book_id: str) -> str:
+    """WeRead web book-detail URL. Reproduces WeRead's published bookId→hash transform."""
+    book_id = str(book_id)
+    digest = hashlib.md5(book_id.encode("utf-8")).hexdigest()
+    result = digest[:3]
+    if book_id.isdigit():
+        parts = [format(int(book_id[i:i + 9]), "x") for i in range(0, len(book_id), 9)]
+        type_flag = "3"
+    else:
+        parts = ["".join(format(ord(char), "x") for char in book_id)]
+        type_flag = "4"
+    result += type_flag + "2" + digest[-2:]
+    for index, part in enumerate(parts):
+        length = format(len(part), "x")
+        result += (length if len(length) == 2 else "0" + length) + part
+        if index < len(parts) - 1:
+            result += "g"
+    if len(result) < 20:
+        result += digest[: 20 - len(result)]
+    result += hashlib.md5(result.encode("utf-8")).hexdigest()[:3]
+    return "https://weread.qq.com/web/bookDetail/" + result
 
 
 def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
@@ -180,7 +204,11 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .pop{margin:12px 0;padding:11px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;border-left:3px solid var(--brand2)}
 .pop .tx{font-size:14px;line-height:1.62}.pop .ft{margin-top:6px;font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:10px}
 .rv{margin:12px 0;padding:13px 15px;background:var(--card);border:1px solid var(--line);border-radius:11px}
-.rv .au{font-size:12px;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between;gap:10px}.rv .tx{font-size:14px;line-height:1.62}
+.rv .au{font-size:12px;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between;gap:10px}.rv .tx{font-size:14px;line-height:1.62}.rv .ft{margin-top:7px;display:flex;justify-content:flex-end}
+.cp{background:transparent;border:0;color:var(--muted);font-size:12px;cursor:pointer;padding:2px 8px;border-radius:6px;flex:0 0 auto}
+.cp:hover{background:color-mix(in srgb,var(--brand) 14%,transparent);color:var(--brand)}
+.bhx{display:flex;align-items:center;gap:8px;align-self:flex-start}
+.wr{font-size:12px;color:var(--brand);text-decoration:none;border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line));border-radius:8px;padding:6px 10px;white-space:nowrap}.wr:hover{background:color-mix(in srgb,var(--brand) 10%,transparent)}
 .smode{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;vertical-align:middle}
 .smode button{background:var(--card);border:0;color:var(--muted);padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}.smode button.on{background:var(--brand);color:#fff}
 @media(max-width:620px){.cards{grid-template-columns:1fr}.grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:16px 12px}.sheet{margin:0;border-radius:0;min-height:100vh}}
@@ -291,20 +319,21 @@ e('search').onsubmit=ev=>{ev.preventDefault();curQ=e('q').value.trim();if(!curQ)
 const modal=e('modal');
 function closeBook(){modal.classList.remove('show');document.body.style.overflow=''}
 modal.onclick=ev=>{if(ev.target===modal)closeBook()};
+modal.addEventListener('click',ev=>{const btn=ev.target.closest('.cp');if(!btn)return;ev.stopPropagation();const item=btn.closest('.hl,.th,.pop,.rv'),tx=item&&item.querySelector('.tx');if(!tx)return;navigator.clipboard.writeText(tx.textContent.trim()).then(()=>{const old=btn.textContent;btn.textContent='✓';setTimeout(()=>{btn.textContent=old},1200)})});
 document.addEventListener('keydown',ev=>{if(ev.key==='Escape')closeBook()});
 function star(n){n=n||0;return n>0?'★'.repeat(Math.min(n,5)):''}
 function renderMine(d){
  let body='<div class=bhtools><button id=copymd class=ghost>复制 Markdown</button></div><div class=notes>';
  const reviews=d.thoughts.filter(t=>t.is_book_review),ideas=d.thoughts.filter(t=>!t.is_book_review);
- if(reviews.length){body+=`<div class=ch>书评</div>`+reviews.map(t=>`<div class=th><div class=lb>书评 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span></div></div>`).join('')}
+ if(reviews.length){body+=`<div class=ch>书评</div>`+reviews.map(t=>`<div class=th><div class=lb>书评 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>复制</button></div></div>`).join('')}
  const ideaByCh={};ideas.forEach(t=>{(ideaByCh[t.chapter_uid]=ideaByCh[t.chapter_uid]||[]).push(t)});
  let curCh=null;const groups=[];
  d.highlights.forEach(h=>{const c=h.chapter_uid;if(c!==curCh){curCh=c;groups.push({uid:c,title:h.chapter_title,items:[]})}groups[groups.length-1].items.push(h)});
  if(!groups.length&&!ideas.length&&!reviews.length){body+='<div class=note-empty>这本书还没有划线或想法。</div>'}
  groups.forEach(g=>{body+=`<div class=ch>${esc(g.title||'未分章')}</div>`;
-   g.items.forEach(h=>{body+=`<div class=hl data-c='${h.color_style||0}'><div class=tx>${esc(h.mark_text||'')}</div><div class=ft><span class=date>${fmtDate(h.create_time)}</span></div></div>`});
-   (ideaByCh[g.uid]||[]).forEach(t=>{body+=`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span></div></div>`})});
- Object.keys(ideaByCh).forEach(uid=>{if(!groups.some(g=>String(g.uid)===String(uid))){body+=`<div class=ch>${esc(ideaByCh[uid][0].chapter_name||'想法')}</div>`+ideaByCh[uid].map(t=>`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span></div></div>`).join('')}});
+   g.items.forEach(h=>{body+=`<div class=hl data-c='${h.color_style||0}'><div class=tx>${esc(h.mark_text||'')}</div><div class=ft><span class=date>${fmtDate(h.create_time)}</span><button class=cp type=button title=复制>复制</button></div></div>`});
+   (ideaByCh[g.uid]||[]).forEach(t=>{body+=`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>复制</button></div></div>`})});
+ Object.keys(ideaByCh).forEach(uid=>{if(!groups.some(g=>String(g.uid)===String(uid))){body+=`<div class=ch>${esc(ideaByCh[uid][0].chapter_name||'想法')}</div>`+ideaByCh[uid].map(t=>`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>复制</button></div></div>`).join('')}});
  return body+'</div>';
 }
 async function openBook(id,store){if(!id)return;modal.classList.add('show');document.body.style.overflow='hidden';e('sheet').innerHTML='<div class=note-empty>加载中…</div>';
@@ -314,7 +343,7 @@ async function openBook(id,store){if(!id)return;modal.classList.add('show');docu
  const tabs=mine?['mine','popular','reviews']:['popular','reviews'];const LABEL={mine:'我的笔记',popular:'热门划线',reviews:'书评'};
  const meta=mine?`${b.rating?`<span class=chip>推荐 ${(b.rating/10).toFixed(1)}%</span>`:''}${b.word_count?`<span class=chip>${(b.word_count/10000).toFixed(1)} 万字</span>`:''}${b.publisher?`<span class=chip>${esc(b.publisher)}</span>`:''}`:'';
  const st=mine?`<div class=st><span class=chip>进度 ${p}%</span><span class=chip>划线 ${mine.highlights.length}</span><span class=chip>想法 ${mine.thoughts.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}${meta}</div>`:'';
- const header=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div>${st}</div><button class=x title=关闭>×</button></div>`;
+ const header=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div>${st}</div><div class=bhx>${b.weread_url?`<a class=wr href='${esc(b.weread_url)}' target=_blank rel=noopener title='在微信读书中打开'>微信读书 ↗</a>`:''}<button class=x type=button title=关闭>×</button></div></div>`;
  const tabbar=`<div class=tabs>${tabs.map((t,i)=>`<button data-t='${t}' type=button class='${i===0?'on':''}'>${LABEL[t]}</button>`).join('')}</div>`;
  e('sheet').innerHTML=header+tabbar+`<div id=tabwrap></div>`;
  e('sheet').querySelector('.x').onclick=closeBook;
@@ -328,8 +357,8 @@ async function openBook(id,store){if(!id)return;modal.classList.add('show');docu
   const data=await fetch(`/api/book-extra?book_id=${encodeURIComponent(id)}&kind=${t}`).then(r=>r.json());
   if(data.error){wrap.innerHTML=`<div class=note-empty>${esc(data.error)}</div>`;return}
   let html;
-  if(t==='popular'){const its=data.items||[];html='<div class=notes>'+(its.length?its.map(x=>`<div class=pop><div class=tx>${esc(x.markText||'')}</div><div class=ft><span>${esc(x.chapter||'')}</span><span>${x.count} 人划线</span></div></div>`).join(''):'<div class=note-empty>暂无热门划线。</div>')+'</div>'}
-  else{const rs=data.reviews||[];html='<div class=notes>'+(rs.length?rs.map(x=>`<div class=rv><div class=au><span>${esc(x.author||'匿名')} ${star(x.star)}</span><span>${x.likes} 赞</span></div><div class=tx>${esc(x.content||'')}</div></div>`).join(''):'<div class=note-empty>暂无公开书评。</div>')+'</div>'}
+  if(t==='popular'){const its=data.items||[];html='<div class=notes>'+(its.length?its.map(x=>`<div class=pop><div class=tx>${esc(x.markText||'')}</div><div class=ft><span>${esc(x.chapter||'')}</span><span>${x.count} 人划线 · <button class=cp type=button title=复制>复制</button></span></div></div>`).join(''):'<div class=note-empty>暂无热门划线。</div>')+'</div>'}
+  else{const rs=data.reviews||[];html='<div class=notes>'+(rs.length?rs.map(x=>`<div class=rv><div class=au><span>${esc(x.author||'匿名')} ${star(x.star)}</span><span>${x.likes} 赞</span></div><div class=tx>${esc(x.content||'')}</div><div class=ft><button class=cp type=button title=复制>复制</button></div></div>`).join(''):'<div class=note-empty>暂无公开书评。</div>')+'</div>'}
   cache[t]=html;wrap.innerHTML=html;
  }
  e('sheet').querySelectorAll('.tabs button').forEach(btn=>btn.onclick=()=>show(btn.dataset.t));
@@ -429,10 +458,12 @@ def make_handler(db_path: Path):
                         FROM thoughts WHERE book_id=? ORDER BY is_book_review DESC, create_time""",
                         (book_id,),
                     ).fetchall()
+                    book_dict = dict(book)
+                    book_dict["weread_url"] = weread_url(book_id)
                     _json(
                         self,
                         {
-                            "book": dict(book),
+                            "book": book_dict,
                             "highlights": [dict(row) for row in highlights],
                             "thoughts": [dict(row) for row in thoughts],
                         },
@@ -484,7 +515,8 @@ def make_handler(db_path: Path):
                                 info = entry.get("bookInfo") or {}
                                 if info.get("bookId"):
                                     books.append({"book_id": info["bookId"], "title": info.get("title"),
-                                                  "author": info.get("author"), "cover": info.get("cover")})
+                                                  "author": info.get("author"), "cover": info.get("cover"),
+                                                  "weread_url": weread_url(info["bookId"])})
                         seen, unique = set(), []
                         for book in books:
                             if book["book_id"] not in seen:

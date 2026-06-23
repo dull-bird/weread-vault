@@ -17,7 +17,7 @@ def _date(value: int | None) -> str:
 
 # 脚本管理的 frontmatter 字段（每次从微信读书真相刷新）；其余字段视为用户在
 # Obsidian 里自加（分类/评分/重读标记等），重新导出时予以保留。
-_MANAGED_FRONTMATTER = {"title", "author", "book_id", "source", "category", "progress", "highlights", "thoughts"}
+_MANAGED_FRONTMATTER = {"title", "author", "book_id", "source", "category", "cover", "progress", "highlights", "thoughts"}
 
 
 def _user_frontmatter(path: Path) -> list[str]:
@@ -77,6 +77,7 @@ def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = F
             f'book_id: "{book["book_id"]}"',
             "source: " + '"微信读书"',
             f'category: "{book["category"] or ""}"',
+            f'cover: "{book["cover"] or ""}"',
             f"progress: {progress}",
             f"highlights: {len(highlights)}",
             f"thoughts: {len(thoughts)}",
@@ -85,6 +86,7 @@ def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = F
             "",
             f"# {book['title'] or '未命名'}",
             "",
+            *([f"![{(book['title'] or '封面').replace(chr(34), '')}]({book['cover']})", ""] if book["cover"] else []),
             f"> 作者：{book['author'] or '未知'} · 进度：{progress}%",
             "",
             f"[在微信读书中打开](weread://reading?bId={book['book_id']})",
