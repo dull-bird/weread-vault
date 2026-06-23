@@ -58,8 +58,38 @@ class SyncService:
     def stats(self) -> int:
         return self._run("stats", self._sync_stats)
 
+    def info(self, limit: int | None = None) -> int:
+        return self._run("info", lambda: self._sync_book_info(limit))
+
     def all(self, full_notes: bool = False, note_limit: int | None = None) -> dict[str, int]:
         return {"books": self.books(), "notes": self.notes(full_notes, note_limit), "stats": self.stats()}
+
+    def _sync_book_info(self, limit: int | None) -> int:
+        # Backfill rich metadata only for books not yet enriched (rating IS NULL), so this is
+        # incremental: a one-time pass after upgrade, then effectively free on later runs.
+        sql = "SELECT book_id, title FROM books WHERE rating IS NULL ORDER BY sort DESC"
+        if limit is not None:
+            sql += f" LIMIT {int(limit)}"
+        rows = self.conn.execute(sql).fetchall()
+        total = len(rows)
+        self.report(f"书籍信息：待补全 {total} 本")
+        done = 0
+        for index, book in enumerate(rows, 1):
+            try:
+                info = self.gateway.call("/book/info", bookId=book["book_id"])
+                with self.conn:
+                    self.conn.execute(
+                        """UPDATE books SET rating=?, rating_count=?, word_count=?, publisher=?, isbn=?, translator=?
+                        WHERE book_id=?""",
+                        (int(info.get("newRating") or 0), info.get("newRatingCount"), info.get("wordCount"),
+                         info.get("publisher"), info.get("isbn"), info.get("translator"), book["book_id"]),
+                    )
+                done += 1
+                self.report(f"书籍信息：[{index}/{total}] {book['title'] or book['book_id']}")
+            except Exception as error:
+                self.report(f"书籍信息：[{index}/{total}] {book['title'] or book['book_id']} 失败：{error}")
+            time.sleep(self.gateway.sleep_seconds)
+        return done
 
     def _sync_books(self) -> int:
         last_sort: int | None = None

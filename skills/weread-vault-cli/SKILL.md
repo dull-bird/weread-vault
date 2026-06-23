@@ -68,6 +68,13 @@ weread-vault sync notes --limit 1
 
 Each book is fetched completely before one SQLite transaction is committed. On a network/API failure, that book retains its previous rows and synchronization marker, so the next run retries it safely.
 
+Backfill rich book metadata (rating, word count, publisher, ISBN, translator) for books that don't have it yet. This only fetches books where `rating IS NULL`, so it is a one-time pass that is effectively free afterward and powers rating/word-count sorting in the dashboard:
+
+```bash
+weread-vault sync info          # backfill all un-enriched books
+weread-vault sync info --limit 20   # or a batch at a time
+```
+
 ## Inspect and preview
 
 ```bash

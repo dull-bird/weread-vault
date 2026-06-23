@@ -47,7 +47,7 @@ def parser() -> argparse.ArgumentParser:
     sub = result.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="创建本地 SQLite 数据库")
     sync = sub.add_parser("sync", help="从微信读书同步到本地库")
-    sync.add_argument("scope", nargs="?", choices=("all", "books", "notes", "stats"), default="all")
+    sync.add_argument("scope", nargs="?", choices=("all", "books", "notes", "stats", "info"), default="all")
     sync.add_argument("--full-notes", action="store_true", help="忽略变更水位，重新同步所有有笔记的书")
     sync.add_argument("--limit", type=int, help="最多同步多少本笔记书；适合首次测试或分批同步")
     sub.add_parser("status", help="显示本地库状态")
@@ -124,6 +124,8 @@ def main(argv: list[str] | None = None) -> None:
                     count = service.notes(args.full_notes, args.limit)
                 elif args.scope == "stats":
                     count = service.stats()
+                elif args.scope == "info":
+                    count = service.info(args.limit)
                 else:
                     count = service.all(args.full_notes, args.limit)
             print(f"同步完成：{count}")

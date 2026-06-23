@@ -5,7 +5,14 @@ import time
 from pathlib import Path
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Columns added after v1 (rich /book/info metadata). Added idempotently to existing
+# databases via PRAGMA table_info so upgrading never drops data.
+_BOOK_EXTRA_COLUMNS = {
+    "rating": "REAL", "rating_count": "INTEGER", "word_count": "INTEGER",
+    "publisher": "TEXT", "isbn": "TEXT", "translator": "TEXT",
+}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -29,6 +36,12 @@ CREATE TABLE IF NOT EXISTS books (
   finished INTEGER,
   sort INTEGER,
   notes_synced_sort INTEGER,
+  rating REAL,
+  rating_count INTEGER,
+  word_count INTEGER,
+  publisher TEXT,
+  isbn TEXT,
+  translator TEXT,
   synced_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS highlights (
@@ -91,9 +104,17 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(books)")}
+    for name, sqltype in _BOOK_EXTRA_COLUMNS.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE books ADD COLUMN {name} {sqltype}")  # name/type are internal constants
+
+
 def initialize(path: Path) -> None:
     with connect(path) as conn:
         conn.executescript(SCHEMA)
+        _ensure_columns(conn)
         conn.execute(
             "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
             (SCHEMA_VERSION, int(time.time())),

@@ -78,6 +78,9 @@ git submodule update --init --recursive
 export WEREAD_API_KEY='你的 key'
 weread-vault sync
 
+# 补全富书籍信息（评分/字数/出版社/ISBN），一次性回填，支持按评分、字数排序
+weread-vault sync info
+
 # 看本地数据库的数量与最近同步状态
 weread-vault status
 

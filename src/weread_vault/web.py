@@ -199,7 +199,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <section><h2>书架 <span class='n' id='shelf-n'></span></h2>
 <div class='toolbar'>
 <div class='seg' id='view-seg'><button data-v='grid' class='on' type='button'>封面</button><button data-v='list' type='button'>列表</button></div>
-<select id='sort-sel' title='排序'><option value='recent'>最近添加</option><option value='progress'>阅读进度</option><option value='notes'>笔记最多</option><option value='title'>书名</option></select>
+<select id='sort-sel' title='排序'><option value='recent'>最近添加</option><option value='progress'>阅读进度</option><option value='notes'>笔记最多</option><option value='rating'>评分</option><option value='words'>字数</option><option value='title'>书名</option></select>
 <select id='cat-sel' title='分类'><option value=''>全部分类</option></select>
 </div>
 <div id='shelf' class='empty'>加载中…</div><div id='shelf-pager'></div></section></main>
@@ -212,7 +212,7 @@ function cover(x){const t=x.title||'未命名',fallback=ph(t);if(x.cover){return
 function ph(t){const[a,b]=hue(t);return `<div class=ph style="background:linear-gradient(150deg,${a},${b})">${esc(t).slice(0,18)}</div>`}
 let allBooks=[],curView='grid',curSort='recent',curCat='',shelfPage=1;const SHELF_PAGE=24;
 const topCat=c=>c?String(c).split('-')[0]:'未分类';
-const SORTERS={recent:(a,b)=>(b.sort||0)-(a.sort||0),progress:(a,b)=>(b.reading_progress||0)-(a.reading_progress||0),notes:(a,b)=>(b.total_notes||0)-(a.total_notes||0),title:(a,b)=>String(a.title||'').localeCompare(String(b.title||''),'zh')};
+const SORTERS={recent:(a,b)=>(b.sort||0)-(a.sort||0),progress:(a,b)=>(b.reading_progress||0)-(a.reading_progress||0),notes:(a,b)=>(b.total_notes||0)-(a.total_notes||0),rating:(a,b)=>(b.rating||0)-(a.rating||0),words:(a,b)=>(b.word_count||0)-(a.word_count||0),title:(a,b)=>String(a.title||'').localeCompare(String(b.title||''),'zh')};
 function renderShelf(){
  const sh=e('shelf'),pg=e('shelf-pager');pg.innerHTML='';
  if(!allBooks.length){sh.className='empty';sh.innerHTML='尚未同步数据。点上方“同步”按钮拉取你的书架。';e('shelf-n').textContent='';return}
@@ -224,7 +224,7 @@ function renderShelf(){
  e('shelf-n').textContent=`共 ${arr.length} 本`+(curCat?` · ${curCat}`:'')+(pages>1?` · 第 ${shelfPage}/${pages} 页`:'');
  if(curView==='list'){
   sh.className='list';
-  sh.innerHTML=slice.map(x=>{const p=Math.max(0,Math.min(100,x.reading_progress||0));return `<div class=lrow onclick="openBook('${esc(x.book_id)}')"><div class=lc>${cover(x)}</div><div class=li><div class=lt>${esc(x.title||'未命名')}</div><div class=la>${esc(x.author||'—')}</div></div><span class=lcat>${esc(topCat(x.category))}</span><div class=lp><div class=bar><i style="width:${p}%"></i></div></div><span class=ln>${x.total_notes||0} 笔记</span></div>`}).join('');
+  sh.innerHTML=slice.map(x=>{const p=Math.max(0,Math.min(100,x.reading_progress||0));return `<div class=lrow onclick="openBook('${esc(x.book_id)}')"><div class=lc>${cover(x)}</div><div class=li><div class=lt>${esc(x.title||'未命名')}</div><div class=la>${esc(x.author||'—')}</div></div><span class=lcat>${esc(topCat(x.category))}</span><span class=ln>${x.rating?`推荐 ${(x.rating/10).toFixed(0)}%`:''}</span><div class=lp><div class=bar><i style="width:${p}%"></i></div></div><span class=ln>${x.total_notes||0} 笔记</span></div>`}).join('');
  }else{
   sh.className='grid';
   sh.innerHTML=slice.map(x=>{const p=Math.max(0,Math.min(100,x.reading_progress||0));return `<div class=book onclick="openBook('${esc(x.book_id)}')"><div class=cover>${cover(x)}</div><div class=meta><div class=t>${esc(x.title||'未命名')}</div><div class=a>${esc(x.author||'—')}</div></div><div class=bar><i style="width:${p}%"></i></div><div class=pc><span>${x.total_notes||0} 条笔记</span><span>${p}%</span></div></div>`}).join('');
@@ -312,7 +312,8 @@ async function openBook(id,store){if(!id)return;modal.classList.add('show');docu
  if(!store){const d=await fetch('/api/book?book_id='+encodeURIComponent(id)).then(r=>r.json());if(!d.error)mine=d}
  const b=mine?mine.book:(store||{}),p=Math.max(0,Math.min(100,b.reading_progress||0));
  const tabs=mine?['mine','popular','reviews']:['popular','reviews'];const LABEL={mine:'我的笔记',popular:'热门划线',reviews:'书评'};
- const st=mine?`<div class=st><span class=chip>进度 ${p}%</span><span class=chip>划线 ${mine.highlights.length}</span><span class=chip>想法 ${mine.thoughts.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}</div>`:'';
+ const meta=mine?`${b.rating?`<span class=chip>推荐 ${(b.rating/10).toFixed(1)}%</span>`:''}${b.word_count?`<span class=chip>${(b.word_count/10000).toFixed(1)} 万字</span>`:''}${b.publisher?`<span class=chip>${esc(b.publisher)}</span>`:''}`:'';
+ const st=mine?`<div class=st><span class=chip>进度 ${p}%</span><span class=chip>划线 ${mine.highlights.length}</span><span class=chip>想法 ${mine.thoughts.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}${meta}</div>`:'';
  const header=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div>${st}</div><button class=x title=关闭>×</button></div>`;
  const tabbar=`<div class=tabs>${tabs.map((t,i)=>`<button data-t='${t}' type=button class='${i===0?'on':''}'>${LABEL[t]}</button>`).join('')}</div>`;
  e('sheet').innerHTML=header+tabbar+`<div id=tabwrap></div>`;
@@ -398,8 +399,8 @@ def make_handler(db_path: Path):
                 elif parsed.path == "/api/books":
                     limit = min(max(int(query.get("limit", [20])[0]), 1), 5000)
                     rows = conn.execute(
-                        """SELECT book_id,title,author,cover,category,total_notes,reading_progress,finished,sort
-                        FROM books ORDER BY sort DESC LIMIT ?""",
+                        """SELECT book_id,title,author,cover,category,total_notes,reading_progress,finished,sort,
+                        rating,word_count FROM books ORDER BY sort DESC LIMIT ?""",
                         (limit,),
                     ).fetchall()
                     _json(self, [dict(row) for row in rows])
@@ -410,7 +411,8 @@ def make_handler(db_path: Path):
                         return
                     book = conn.execute(
                         """SELECT book_id,title,author,cover,intro,category,publish_time,
-                        total_notes,reading_progress,review_count,note_count,bookmark_count,finished
+                        total_notes,reading_progress,review_count,note_count,bookmark_count,finished,
+                        rating,rating_count,word_count,publisher,isbn,translator
                         FROM books WHERE book_id=?""",
                         (book_id,),
                     ).fetchone()
