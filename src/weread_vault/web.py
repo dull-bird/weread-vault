@@ -526,7 +526,7 @@ def make_handler(db_path: Path):
                             data = Gateway().call("/book/bestbookmarks", bookId=book_id)
                             chapters = {c.get("chapterUid"): c.get("title") for c in (data.get("chapters") or [])}
                             items = [
-                                {"markText": it.get("markText"), "count": it.get("totalCount", 0),
+                                {"markText": it.get("markText"), "count": it.get("totalCount") or 0,
                                  "chapter": chapters.get(it.get("chapterUid"))}
                                 for it in (data.get("items") or []) if it.get("markText")
                             ]
