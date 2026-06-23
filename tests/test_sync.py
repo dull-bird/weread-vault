@@ -34,6 +34,12 @@ class FakeGateway:
             }}]}
         if endpoint == "/readdata/detail":
             return {"ok": True}
+        if endpoint == "/shelf/sync":
+            return {"books": [
+                {"bookId": "book-1", "title": "Test Book", "author": "Author", "cover": "c1", "category": "文学"},
+                {"bookId": "book-2", "title": "Shelf Only", "author": "B", "cover": "c2",
+                 "category": "科技", "finishReading": 1, "updateTime": 50},
+            ]}
         raise AssertionError(endpoint)
 
 
@@ -56,6 +62,21 @@ class SyncTests(unittest.TestCase):
             book = conn.execute("SELECT notes_synced_sort FROM books WHERE book_id='book-1'").fetchone()
             self.assertIsNone(book["notes_synced_sort"])
             self.assertEqual(conn.execute("SELECT count(*) FROM highlights").fetchone()[0], 0)
+
+    def test_shelf_sync_adds_all_books_without_clobbering_noted_books(self):
+        with connect(self.db_path) as conn:
+            service = SyncService(conn, FakeGateway(), report=lambda _: None)
+            service.books()  # book-1 gets total_notes from notebooks
+            service.notes()
+            noted_before = conn.execute("SELECT total_notes FROM books WHERE book_id='book-1'").fetchone()[0]
+            self.assertEqual(service.shelf(), 2)
+            # shelf-only book added with zero notes
+            shelf_only = conn.execute("SELECT total_notes,finished FROM books WHERE book_id='book-2'").fetchone()
+            self.assertEqual(shelf_only["total_notes"], 0)
+            self.assertEqual(shelf_only["finished"], 1)
+            # existing noted book keeps its note count (shelf sync is non-destructive)
+            noted_after = conn.execute("SELECT total_notes FROM books WHERE book_id='book-1'").fetchone()[0]
+            self.assertEqual(noted_after, noted_before)
 
     def test_successful_book_is_atomic_and_searchable(self):
         with connect(self.db_path) as conn:

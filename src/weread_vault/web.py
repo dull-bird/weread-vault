@@ -259,7 +259,7 @@ async function runSync(mode){const sbtn=e('sync-btn'),fbtn=e('full-btn'),msg=e('
     if(o.done){result=o.counts;continue}
     if(o.line){msg.textContent=o.line;const m=o.line.match(/\[(\d+)\/(\d+)\]/);if(m&&+m[2]>0){prog.className='prog show';bar.style.width=Math.round(m[1]/m[2]*100)+'%'}}}}
   prog.className='prog show';bar.style.width='100%';
-  msg.className='msg ok';msg.textContent=`同步完成：书架 ${result?.books??0} 本已刷新，更新了笔记的书 ${result?.notes??0} 本，统计快照 +${result?.stats??0}`;
+  msg.className='msg ok';msg.textContent=`同步完成：全书架 ${result?.shelf??0} 本，有笔记 ${result?.books??0} 本，更新笔记 ${result?.notes??0} 本，统计 +${result?.stats??0}`;
   await load();await loadSettings();
  }catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}
  finally{sbtn.disabled=fbtn.disabled=false;sbtn.textContent=slabel;fbtn.textContent=flabel;setTimeout(()=>{e('prog').className='prog'},1000)}}
@@ -593,7 +593,8 @@ def make_handler(db_path: Path):
                 emit({"line": "正在同步书架…（首次可能较慢）"})
                 with connect(db_path) as conn:
                     service = SyncService(conn, Gateway(), report=lambda message: emit({"line": message}))
-                    counts = {"books": 0, "notes": 0, "stats": 0}
+                    counts = {"shelf": 0, "books": 0, "notes": 0, "stats": 0}
+                    counts["shelf"] = service.shelf()
                     counts["books"] = service.books()
                     emit({"line": "书架已就绪，开始同步笔记…"})
                     counts["notes"] = service.notes(full=(mode == "full"))

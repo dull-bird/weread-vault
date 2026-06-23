@@ -61,8 +61,48 @@ class SyncService:
     def info(self, limit: int | None = None) -> int:
         return self._run("info", lambda: self._sync_book_info(limit))
 
+    def shelf(self) -> int:
+        return self._run("shelf", self._sync_shelf)
+
     def all(self, full_notes: bool = False, note_limit: int | None = None) -> dict[str, int]:
-        return {"books": self.books(), "notes": self.notes(full_notes, note_limit), "stats": self.stats()}
+        return {"shelf": self.shelf(), "books": self.books(),
+                "notes": self.notes(full_notes, note_limit), "stats": self.stats()}
+
+    def _sync_shelf(self) -> int:
+        # The whole bookshelf, including books without any notes. Non-destructive: never
+        # overwrites note counts / sort / progress that the notebooks sync owns for noted books.
+        payload = self.gateway.call("/shelf/sync")
+        books = payload.get("books") or []
+        now = int(time.time())
+        with self.conn:
+            for item in books:
+                self._upsert_shelf_book(item, now)
+        self.report(f"书架：{len(books)} 本")
+        return len(books)
+
+    def _upsert_shelf_book(self, item: dict[str, Any], now: int) -> None:
+        book_id = item.get("bookId")
+        if not book_id:
+            return
+        category = item.get("category")
+        if isinstance(category, list):
+            category = (category[0] or {}).get("title") if category else None
+        elif not isinstance(category, str):
+            category = None
+        finished = item.get("finishReading")
+        updated = self.conn.execute(
+            """UPDATE books SET title=COALESCE(?,title), author=COALESCE(?,author),
+            cover=COALESCE(?,cover), category=COALESCE(category,?), finished=COALESCE(?,finished)
+            WHERE book_id=?""",
+            (item.get("title"), item.get("author"), item.get("cover"), category, finished, str(book_id)),
+        )
+        if updated.rowcount == 0:
+            self.conn.execute(
+                """INSERT INTO books(book_id,title,author,cover,category,finished,total_notes,sort,synced_at)
+                VALUES (?,?,?,?,?,?,0,?,?)""",
+                (str(book_id), item.get("title"), item.get("author"), item.get("cover"), category, finished,
+                 item.get("updateTime") or now, now),
+            )
 
     def _sync_book_info(self, limit: int | None) -> int:
         # Backfill rich metadata only for books not yet enriched (rating IS NULL), so this is
