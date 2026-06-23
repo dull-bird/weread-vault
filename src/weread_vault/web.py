@@ -122,6 +122,19 @@ def _page() -> bytes:
 @media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#8b949e;--line:#222831;--card:#161b22;--shadow:0 1px 2px #0006}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
 main{max-width:1080px;margin:0 auto;padding:40px 22px 72px}
+.layout{display:flex;max-width:1200px;margin:0 auto;min-height:100vh}
+.sidebar{width:208px;flex:0 0 208px;padding:24px 14px;border-right:1px solid var(--line);position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px}
+.brand{font-size:18px;font-weight:700;letter-spacing:-.02em;padding:0 10px}.brand .dot{color:var(--brand)}
+.tagline{font-size:11px;color:var(--muted);padding:4px 10px 16px;line-height:1.4}
+.nav{display:flex;flex-direction:column;gap:3px}
+.nav button{text-align:left;background:transparent;color:var(--fg);border:0;padding:10px 12px;border-radius:9px;font:inherit;font-size:14px;cursor:pointer;font-weight:500}
+.nav button:hover{background:color-mix(in srgb,var(--brand) 8%,transparent)}
+.nav button.on{background:color-mix(in srgb,var(--brand) 13%,transparent);color:var(--brand);font-weight:600}
+.side-foot{margin-top:auto;padding:10px;font-size:12px;border-top:1px solid var(--line)}
+.content{flex:1;min-width:0;max-width:1000px;padding:30px 32px 72px}
+.content h2:first-child{margin-top:0}
+.view[hidden]{display:none}
+@media(max-width:720px){.layout{flex-direction:column}.sidebar{width:auto;height:auto;position:static;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;border-right:0;border-bottom:1px solid var(--line);padding:14px}.tagline{display:none}.nav{flex-direction:row;flex-wrap:wrap}.nav button{padding:7px 10px;font-size:13px}.side-foot{margin:0;border:0;padding:0}.content{padding:20px}}
 .head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
 h1{margin:0;font-size:27px;letter-spacing:-.02em;font-weight:700}.dot{color:var(--brand)}
 .sub{color:var(--muted);margin:9px 0 30px;font-size:14px}
@@ -213,24 +226,40 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .smode button{background:var(--card);border:0;color:var(--muted);padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}.smode button.on{background:var(--brand);color:#fff}
 @media(max-width:620px){.cards{grid-template-columns:1fr}.grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:16px 12px}.sheet{margin:0;border-radius:0;min-height:100vh}}
 </style></head>
-<body><main>
-<div class='head'><h1>WeRead <span class='dot'>Vault</span></h1></div>
-<p class='sub'>为 AI 工具打造的微信读书笔记库 · 划线与想法本地存档，可被 Claude Code、Codex 等 agent 检索、引用、导出到 Obsidian</p>
-<div class='actions'><button id='sync-btn' type='button'>同步</button><button id='full-btn' class='ghost' type='button'>完整重扫</button><span id='api-key-status' class='hint'>检查 API Key…</span><span id='sync-msg' class='msg'></span><div id='keybox' class='keybox'><input id='api-key' type='password' autocomplete='off' placeholder='粘贴 WEREAD_API_KEY，仅保存到本机私有配置'><button id='save-key' class='ghost' type='button'>保存 API Key</button></div></div>
-<div id='prog' class='prog'><i></i></div>
+<body><div class='layout'>
+<aside class='sidebar'>
+<div class='brand'>WeRead <span class='dot'>Vault</span></div>
+<div class='tagline'>为 AI 工具打造的微信读书笔记库</div>
+<nav class='nav'>
+<button data-view='shelf' class='on' type='button'>📚 书架</button>
+<button data-view='stats' type='button'>📊 阅读统计</button>
+<button data-view='search' type='button'>🔍 搜索 / 书城</button>
+<button data-view='sync' type='button'>⚙️ 同步设置</button>
+</nav>
+<div class='side-foot'><span id='api-key-status' class='hint'>检查 API Key…</span></div>
+</aside>
+<main class='content'>
+<section class='view' data-view='shelf'>
 <div class='cards'>
 <div class='card'><span class='k'>书籍</span><b id='books'>—</b></div>
 <div class='card'><span class='k'>划线</span><b id='highlights'>—</b></div>
 <div class='card'><span class='k'>想法</span><b id='thoughts'>—</b></div></div>
-<section id='stats-sec' style='display:none'><h2>阅读统计 <span class='n' id='stats-word'></span></h2><div id='stats' class='empty'>加载中…</div></section>
-<section><h2>搜索 <span class='smode' id='smode'><button data-m='notes' class='on' type='button'>本地笔记</button><button data-m='store' type='button'>书城</button></span></h2><form id='search'><input id='q' placeholder='输入关键词，搜索划线和想法'><button>搜索</button></form><div id='results' class='res empty'>输入关键词后搜索。</div></section>
-<section><h2>书架 <span class='n' id='shelf-n'></span></h2>
+<h2>书架 <span class='n' id='shelf-n'></span></h2>
 <div class='toolbar'>
 <div class='seg' id='view-seg'><button data-v='grid' class='on' type='button'>封面</button><button data-v='list' type='button'>列表</button></div>
 <select id='sort-sel' title='排序'><option value='recent'>最近添加</option><option value='progress'>阅读进度</option><option value='notes'>笔记最多</option><option value='rating'>评分</option><option value='words'>字数</option><option value='title'>书名</option></select>
 <select id='cat-sel' title='分类'><option value=''>全部分类</option></select>
 </div>
-<div id='shelf' class='empty'>加载中…</div><div id='shelf-pager'></div></section></main>
+<div id='shelf' class='empty'>加载中…</div><div id='shelf-pager'></div>
+</section>
+<section class='view' data-view='stats' hidden><h2>阅读统计 <span class='n' id='stats-word'></span></h2><div id='stats' class='empty'>加载中…</div></section>
+<section class='view' data-view='search' hidden><h2>搜索 <span class='smode' id='smode'><button data-m='notes' class='on' type='button'>本地笔记</button><button data-m='store' type='button'>书城</button></span></h2><form id='search'><input id='q' placeholder='输入关键词，搜索划线和想法'><button>搜索</button></form><div id='results' class='res empty'>输入关键词后搜索。</div></section>
+<section class='view' data-view='sync' hidden><h2>同步设置</h2>
+<div class='actions'><button id='sync-btn' type='button'>同步</button><button id='full-btn' class='ghost' type='button'>完整重扫</button><span id='sync-msg' class='msg'></span><div id='keybox' class='keybox'><input id='api-key' type='password' autocomplete='off' placeholder='粘贴 WEREAD_API_KEY，仅保存到本机私有配置'><button id='save-key' class='ghost' type='button'>保存 API Key</button></div></div>
+<div id='prog' class='prog'><i></i></div>
+<p class='sub'>「同步」会先拉取全书架，再增量同步有变更的笔记，并追加阅读统计。首次可能较慢。API Key 仅保存到本机私有配置，不会上传。</p>
+</section>
+</main></div>
 <div id='modal' class='modal'><div class='sheet' id='sheet'></div></div>
 <script>
 const e=x=>document.getElementById(x),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -377,8 +406,10 @@ function barChart(data,opts){opts=opts||{};const W=opts.w||520,H=opts.h||140,pad
  const bars=data.map((d,i)=>{const bh=(H-26)*(d.value/max);const x=pad+i*step+(step-bw)/2,y=H-18-bh;
   return `<rect x='${x.toFixed(1)}' y='${y.toFixed(1)}' width='${bw.toFixed(1)}' height='${Math.max(bh,1).toFixed(1)}' rx='3' fill='var(--brand)'><title>${esc(String(d.label||''))} ${fmtHours(d.value)}h</title></rect>`+(d.tick!==''?`<text x='${(x+bw/2).toFixed(1)}' y='${H-5}' text-anchor='middle' class='caxis'>${esc(String(d.tick))}</text>`:'')}).join('');
  return `<svg viewBox='0 0 ${W} ${H}' class='chart' preserveAspectRatio='xMidYMid meet'>${bars}</svg>`}
-async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());if(!d.hasData)return;
- const o=d.overall,sec=e('stats');e('stats-sec').style.display='';e('stats-word').textContent=o.preferCategoryWord||'';
+document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{const v=b.dataset.view;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('.view').forEach(s=>{s.hidden=s.dataset.view!==v})});
+async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());const sec=e('stats');
+ if(!d.hasData){sec.className='empty';sec.innerHTML='暂无统计数据，先到「同步设置」同步一次。';return}
+ const o=d.overall;e('stats-word').textContent=o.preferCategoryWord||'';
  const stat=(o.readStat||[]).map(s=>`<span class=chip>${esc(s.stat)} ${esc(s.counts)}</span>`).join('');
  const head=`<div class=panel><div class=big><div><span class=v>${fmtHours(o.totalReadTime)}</span> <span class=l>小时总阅读</span></div><div><span class=v>${o.readDays}</span> <span class=l>天</span></div><div><span class=v>${o.authorCount}</span> <span class=l>位作者</span></div></div><div class=chips style=margin-top:10px>${stat}</div></div>`;
  const yc=`<div class=panel><h3>按年阅读时长</h3>${barChart(o.byYear.map(y=>({label:y.label,tick:y.label,value:y.seconds})))}</div>`;
