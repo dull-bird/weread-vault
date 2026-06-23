@@ -123,9 +123,21 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
         for mode in ("weekly", "monthly", "annually")
         if mode in by_mode
     }
+    annual = by_mode.get("annually") or {}
+    by_month = sorted(
+        ({"label": time.gmtime(int(ts) + 8 * 3600).tm_mon, "seconds": secs} for ts, secs in (annual.get("readTimes") or {}).items()),
+        key=lambda item: item["label"],
+    )
+    # Daily annotation activity from highlight timestamps — multi-year, GitHub-style heatmap.
+    heatmap = {row[0]: row[1] for row in conn.execute(
+        "SELECT date(create_time,'unixepoch','+8 hours') AS d, count(*) AS c "
+        "FROM highlights WHERE create_time IS NOT NULL GROUP BY d"
+    )}
     return {
         "hasData": True,
         "sessions": _session_distribution(conn),
+        "byMonth": by_month,
+        "heatmap": heatmap,
         "overall": {
             "totalReadTime": overall.get("totalReadTime", 0),
             "readDays": overall.get("readDays", 0),
@@ -190,6 +202,8 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .panel h3{margin:0 0 12px;font-size:13px;font-weight:600;color:var(--muted)}
 .chart{width:100%;height:auto;display:block;overflow:visible}
 .caxis{fill:var(--muted);font-size:9px}
+.hmlbl{fill:var(--muted);font-size:8px}
+.hmsel{font:inherit;font-size:12px;background:var(--card);border:1px solid var(--line);border-radius:7px;padding:2px 6px;color:var(--fg);cursor:pointer}
 .big{display:flex;gap:26px;flex-wrap:wrap;align-items:baseline}
 .big .v{font-size:27px;font-weight:700;letter-spacing:-.02em}.big .l{font-size:12px;color:var(--muted)}
 .hbar{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:13px}
@@ -335,9 +349,11 @@ function renderShelf(){
 async function load(){
  let s=await fetch('/api/summary').then(r=>r.json());for(let k of ['books','highlights','thoughts'])e(k).textContent=(s[k]??0).toLocaleString();
  allBooks=await fetch('/api/books?limit=5000').then(r=>r.json());
- const cats=[...new Set(allBooks.filter(x=>!isMp(x)).map(x=>topCat(x.category)))].sort((a,b)=>a.localeCompare(b,'zh'));
+ const nonMp=allBooks.filter(x=>!isMp(x)),counts={};
+ nonMp.forEach(x=>{const c=topCat(x.category);counts[c]=(counts[c]||0)+1});
+ const cats=Object.keys(counts).sort((a,b)=>a.localeCompare(b,'zh'));
  const mpCount=allBooks.filter(isMp).length;
- e('cat-sel').innerHTML='<option value="">全部分类（不含公众号）</option>'+cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+(mpCount?`<option value="__mp__">📰 公众号 (${mpCount})</option>`:'');
+ e('cat-sel').innerHTML=`<option value="">全部分类 (${nonMp.length})</option>`+cats.map(c=>`<option value="${esc(c)}">${esc(c)} (${counts[c]})</option>`).join('')+(mpCount?`<option value="__mp__">公众号 (${mpCount})</option>`:'');
  if(![...e('cat-sel').options].some(o=>o.value===curCat))curCat='';
  e('cat-sel').value=curCat;
  renderShelf();
@@ -453,6 +469,20 @@ function barChart(data,opts){opts=opts||{};const W=opts.w||520,H=opts.h||140,pad
  const bars=data.map((d,i)=>{const bh=(H-26)*(d.value/max);const x=pad+i*step+(step-bw)/2,y=H-18-bh;
   return `<rect x='${x.toFixed(1)}' y='${y.toFixed(1)}' width='${bw.toFixed(1)}' height='${Math.max(bh,1).toFixed(1)}' rx='3' fill='var(--brand)'><title>${esc(String(d.label||''))} ${fmtHours(d.value)}h</title></rect>`+(d.tick!==''?`<text x='${(x+bw/2).toFixed(1)}' y='${H-5}' text-anchor='middle' class='caxis'>${esc(String(d.tick))}</text>`:'')}).join('');
  return `<svg viewBox='0 0 ${W} ${H}' class='chart' preserveAspectRatio='xMidYMid meet'>${bars}</svg>`}
+const MON=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+function heatmapSVG(heat,year){const C=11,G=3,L=22;const first=new Date(year,0,1),fd=first.getDay(),last=new Date(year,11,31);
+ let max=1;for(let t=new Date(first);t<=last;t.setDate(t.getDate()+1)){const ds=`${year}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;if((heat[ds]||0)>max)max=heat[ds];}
+ let rects='',monlbl='',lastMon=-1,idx=0;
+ for(let t=new Date(first);t<=last;t.setDate(t.getDate()+1)){const m=t.getMonth(),ds=`${year}-${String(m+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+  const c=heat[ds]||0,dow=t.getDay(),week=Math.floor((idx+fd)/7),x=L+week*(C+G),y=dow*(C+G);
+  const lv=c===0?0:c<=2?1:c<=5?2:c<=10?3:4,op=[0,25,45,70,100][lv];
+  const fill=lv===0?'var(--line)':`color-mix(in srgb,var(--brand) ${op}%,var(--line))`;
+  rects+=`<rect x=${x} y=${y} width=${C} height=${C} rx=2 fill="${fill}"><title>${ds}：${c} 条划线</title></rect>`;
+  if(t.getDate()<=7&&m!==lastMon){lastMon=m;monlbl+=`<text x=${x} y=8 class=hmlbl>${MON[m]}</text>`;}
+  idx++;}
+ const weeks=Math.ceil((idx+fd)/7),W=L+weeks*(C+G),H=14+7*(C+G);
+ const wl=['一','三','五'].map((l,i)=>`<text x=0 y=${(i*2+1)*(C+G)+C+12} class=hmlbl>${l}</text>`).join('');
+ return `<svg viewBox='0 0 ${W} ${H}' style='width:100%;max-width:${W}px;height:auto'><g transform='translate(0,12)'>${monlbl}${wl}${rects}</g></svg>`}
 document.querySelectorAll('.nav button').forEach(b=>{const k={shelf:'book',stats:'stats',search:'search',sync:'sync'}[b.dataset.view];if(k)b.insertAdjacentHTML('afterbegin',ICO[k]);b.onclick=()=>{const v=b.dataset.view;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('.view').forEach(s=>{s.hidden=s.dataset.view!==v})}});
 async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());const sec=e('stats');
  if(!d.hasData){sec.className='empty';sec.innerHTML='暂无统计数据，先到「同步设置」同步一次。';return}
@@ -466,7 +496,14 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  const auth=`<div class=panel><h3>常读作者 Top</h3>${o.authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`;
  const sd=d.sessions||{distribution:[],total:0},smax=Math.max(1,...sd.distribution.map(x=>x.count));
  const sess=`<div class=panel><h3>单次阅读时长分布 · 据划线时间推断，共 ${sd.total} 次</h3>${sd.distribution.map(x=>`<div class=hbar><span class=nm>${esc(x.label)}</span><span class=tk><i style="width:${(x.count/smax*100).toFixed(0)}%"></i></span><span class=vv>${x.count} 次</span></div>`).join('')}<div style='font-size:11px;color:var(--muted);margin-top:10px'>同一时段连续划线视为一次阅读，跨度即时长；纯阅读未划线的部分无法计入，仅供参考“碎片 vs 整片”的倾向。</div></div>`;
- sec.className='';sec.innerHTML=head+`<div class=stats-grid>${yc}${hc}</div><div style='margin-top:14px'>${sess}</div><div class=stats-grid>${cats}${auth}</div>`}
+ const bm=(d.byMonth||[]);
+ const mc=`<div class=panel><h3>按月阅读时长（今年）</h3>${bm.length?barChart(bm.map(m=>({label:m.label+'月',tick:m.label,value:m.seconds})),{h:120}):'<div class=note-empty>暂无</div>'}</div>`;
+ const heat=d.heatmap||{};const years=[...new Set(Object.keys(heat).map(k=>k.slice(0,4)))].sort().reverse();
+ const curY=years[0]||String(new Date().getFullYear());
+ const ysel=years.map(y=>`<option value=${y}${y===curY?' selected':''}>${y}</option>`).join('');
+ const hm=`<div class=panel><h3>划线热力图 <select id=hm-year class=hmsel>${ysel}</select> · 每日划线活跃度</h3><div id=hm-wrap style='overflow-x:auto'>${heatmapSVG(heat,+curY)}</div><div style='font-size:11px;color:var(--muted);margin-top:8px'>按划线时间统计的每日活跃度（近似阅读活跃，非阅读时长）。颜色越深当天划线越多。</div></div>`;
+ sec.className='';sec.innerHTML=head+`<div style='margin-top:14px'>${hm}</div><div class=stats-grid>${yc}${mc}</div><div class=stats-grid>${hc}${sess}</div><div class=stats-grid>${cats}${auth}</div>`;
+ const hy=e('hm-year');if(hy)hy.onchange=()=>{e('hm-wrap').innerHTML=heatmapSVG(heat,+hy.value)};}
 loadSettings();load();loadStats();</script></body></html>""".encode("utf-8")
 
 

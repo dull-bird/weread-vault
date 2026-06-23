@@ -155,7 +155,22 @@ def main(argv: list[str] | None = None) -> None:
                         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
                     ):
                         schema[name] = [row["name"] for row in readonly.execute(f"PRAGMA table_info({name})")]
-                    _emit_json(schema)
+                    _emit_json({
+                        "tables": schema,
+                        "column_notes": {
+                            "books": "一本书一行。rating=推荐值0–1000(/10得百分比)；word_count字数；total_notes笔记数；"
+                                     "reading_progress 0–100；book_id 以 'MP_' 开头=公众号；category 形如 '经济理财-理财'。",
+                            "highlights": "划线。mark_text=原文；create_time=Unix秒(用 datetime(create_time,'unixepoch','+8 hours') 转北京时间)；book_id 关联 books。",
+                            "thoughts": "想法/书评。is_book_review=1为整本书评；content=内容；create_time=Unix秒。",
+                            "reading_stats": "统计快照(JSON 在 payload)；解析好的统计请改用 `weread-vault stats`。",
+                        },
+                        "examples": [
+                            "SELECT title, rating FROM books WHERE rating>0 ORDER BY rating DESC LIMIT 10",
+                            "SELECT category, count(*) n FROM books WHERE book_id NOT LIKE 'MP_%' GROUP BY category ORDER BY n DESC",
+                            "SELECT b.title, count(*) c FROM highlights h JOIN books b ON b.book_id=h.book_id GROUP BY h.book_id ORDER BY c DESC LIMIT 10",
+                            "SELECT strftime('%Y',datetime(create_time,'unixepoch','+8 hours')) y, count(*) FROM highlights GROUP BY y",
+                        ],
+                    })
                 else:
                     sql = args.sql.strip().rstrip(";")
                     if not sql.lower().startswith(("select", "with")):
