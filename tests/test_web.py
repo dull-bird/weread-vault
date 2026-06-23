@@ -41,6 +41,32 @@ class WebTests(unittest.TestCase):
         self.assertEqual(rows[0]["title"], "Test Book")
         self.assertEqual(rows[0]["cover"], "https://example.test/cover.jpg")
 
+    def test_stats_endpoint_parses_overall_snapshot(self):
+        payload = {
+            "totalReadTime": 3600, "readDays": 10, "authorCount": 5,
+            "readTimes": {"1514736000": 1000, "1546272000": 2000},  # 2018, 2019
+            "preferTime": list(range(24)),
+            "preferCategory": [{"categoryTitle": "经济理财", "readingTime": 500, "readingCount": 3}],
+            "preferAuthor": [{"name": "刘慈欣", "count": 2, "readTime": "1小时"}],
+            "readStat": [{"stat": "读过", "counts": "10本"}],
+            "preferCategoryWord": "偏好经济理财",
+        }
+        with connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO reading_stats(mode, base_time, payload, fetched_at) VALUES('overall', 0, ?, 100)",
+                (json.dumps(payload),),
+            )
+        data = self.get_json("/api/stats")
+        self.assertTrue(data["hasData"])
+        overall = data["overall"]
+        self.assertEqual(overall["totalReadTime"], 3600)
+        self.assertEqual([y["label"] for y in overall["byYear"]], [2018, 2019])
+        self.assertEqual(overall["categories"][0]["title"], "经济理财")
+        self.assertEqual(len(overall["preferTime"]), 24)
+
+    def test_stats_endpoint_reports_no_data_when_empty(self):
+        self.assertEqual(self.get_json("/api/stats"), {"hasData": False})
+
     def test_sync_endpoint_defaults_to_incremental_notes(self):
         calls: list[str] = []
         original_gateway = web.Gateway

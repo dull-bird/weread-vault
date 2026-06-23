@@ -4,6 +4,7 @@ import html
 import json
 import sqlite3
 import threading
+import time
 import urllib.parse
 import webbrowser
 from http import HTTPStatus
@@ -44,6 +45,51 @@ def _sync_counts(service: SyncService, mode: str) -> dict[str, int]:
     raise ValueError("未知同步模式。")
 
 
+def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
+    rows = conn.execute(
+        """SELECT mode, payload FROM reading_stats
+        WHERE (mode, fetched_at) IN (SELECT mode, MAX(fetched_at) FROM reading_stats GROUP BY mode)"""
+    ).fetchall()
+    by_mode = {row["mode"]: json.loads(row["payload"]) for row in rows}
+    overall = by_mode.get("overall") or {}
+    if not overall:
+        return {"hasData": False}
+    # WeRead's yearly buckets are Asia/Shanghai (UTC+8) year boundaries; shift before reading the year.
+    by_year = sorted(
+        ({"label": time.gmtime(int(ts) + 8 * 3600).tm_year, "seconds": secs} for ts, secs in (overall.get("readTimes") or {}).items()),
+        key=lambda item: item["label"],
+    )
+    categories = [
+        {"title": c.get("categoryTitle"), "seconds": c.get("readingTime", 0), "count": c.get("readingCount", 0)}
+        for c in (overall.get("preferCategory") or [])
+    ][:8]
+    authors = [
+        {"name": a.get("name"), "count": a.get("count", 0), "readTime": a.get("readTime", "")}
+        for a in (overall.get("preferAuthor") or [])
+    ][:8]
+    periods = {
+        mode: {"totalReadTime": by_mode[mode].get("totalReadTime", 0), "readDays": by_mode[mode].get("readDays", 0)}
+        for mode in ("weekly", "monthly", "annually")
+        if mode in by_mode
+    }
+    return {
+        "hasData": True,
+        "overall": {
+            "totalReadTime": overall.get("totalReadTime", 0),
+            "readDays": overall.get("readDays", 0),
+            "authorCount": overall.get("authorCount", 0),
+            "readStat": overall.get("readStat", []),
+            "preferTime": overall.get("preferTime", []),
+            "byYear": by_year,
+            "categories": categories,
+            "authors": authors,
+            "preferCategoryWord": overall.get("preferCategoryWord", ""),
+            "preferTimeWord": overall.get("preferTimeWord", ""),
+        },
+        "periods": periods,
+    }
+
+
 def _page() -> bytes:
     return r"""<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -68,6 +114,18 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
 .seg button{background:var(--card);color:var(--muted);border:0;padding:8px 14px;font:inherit;font-size:13px;cursor:pointer}
 .seg button.on{background:var(--brand);color:#fff}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+@media(max-width:620px){.stats-grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+.panel h3{margin:0 0 12px;font-size:13px;font-weight:600;color:var(--muted)}
+.chart{width:100%;height:auto;display:block;overflow:visible}
+.caxis{fill:var(--muted);font-size:9px}
+.big{display:flex;gap:26px;flex-wrap:wrap;align-items:baseline}
+.big .v{font-size:27px;font-weight:700;letter-spacing:-.02em}.big .l{font-size:12px;color:var(--muted)}
+.hbar{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:13px}
+.hbar .nm{width:92px;flex:0 0 92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--fg)}
+.hbar .tk{flex:1;height:9px;border-radius:5px;background:var(--line);overflow:hidden}.hbar .tk i{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--brand2))}
+.hbar .vv{width:70px;flex:0 0 70px;text-align:right;font-size:12px;color:var(--muted)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:20px 16px}
 .list{display:flex;flex-direction:column;gap:8px}
 .lrow{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 14px;cursor:pointer;box-shadow:var(--shadow)}
@@ -127,6 +185,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <div class='card'><span class='k'>书籍</span><b id='books'>—</b></div>
 <div class='card'><span class='k'>划线</span><b id='highlights'>—</b></div>
 <div class='card'><span class='k'>想法</span><b id='thoughts'>—</b></div></div>
+<section id='stats-sec' style='display:none'><h2>阅读统计 <span class='n' id='stats-word'></span></h2><div id='stats' class='empty'>加载中…</div></section>
 <section><h2>搜索本地笔记</h2><form id='search'><input id='q' placeholder='输入关键词，搜索划线和想法'><button>搜索</button></form><div id='results' class='res empty'>输入关键词后搜索。</div></section>
 <section><h2>书架 <span class='n' id='shelf-n'></span></h2>
 <div class='toolbar'>
@@ -240,7 +299,23 @@ function toMarkdown(d){const b=d.book;let m=`# ${b.title||'未命名'}\n\n> ${b.
  let curCh=null;const groups=[];d.highlights.forEach(h=>{const c=h.chapter_uid;if(c!==curCh){curCh=c;groups.push({uid:c,title:h.chapter_title,items:[]})}groups[groups.length-1].items.push(h)});
  groups.forEach(g=>{m+=`## ${g.title||'未分章'}\n\n`;g.items.forEach(h=>{m+=`> ${(h.mark_text||'').replace(/\n/g,' ')}  \n*${fmtDate(h.create_time)}*\n\n`});(ideaByCh[g.uid]||[]).forEach(t=>{m+=`💭 ${t.content||''}  \n*${fmtDate(t.create_time)}*\n\n`})});
  return m}
-loadSettings();load();</script></body></html>""".encode("utf-8")
+const fmtHours=s=>Math.round((s||0)/360)/10;
+function barChart(data,opts){opts=opts||{};const W=opts.w||520,H=opts.h||140,pad=22,n=Math.max(1,data.length);
+ const max=Math.max(1,...data.map(d=>d.value));const step=(W-pad*2)/n,bw=Math.min(step*0.6,30);
+ const bars=data.map((d,i)=>{const bh=(H-26)*(d.value/max);const x=pad+i*step+(step-bw)/2,y=H-18-bh;
+  return `<rect x='${x.toFixed(1)}' y='${y.toFixed(1)}' width='${bw.toFixed(1)}' height='${Math.max(bh,1).toFixed(1)}' rx='3' fill='var(--brand)'><title>${esc(String(d.label||''))} ${fmtHours(d.value)}h</title></rect>`+(d.tick!==''?`<text x='${(x+bw/2).toFixed(1)}' y='${H-5}' text-anchor='middle' class='caxis'>${esc(String(d.tick))}</text>`:'')}).join('');
+ return `<svg viewBox='0 0 ${W} ${H}' class='chart' preserveAspectRatio='xMidYMid meet'>${bars}</svg>`}
+async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());if(!d.hasData)return;
+ const o=d.overall,sec=e('stats');e('stats-sec').style.display='';e('stats-word').textContent=o.preferCategoryWord||'';
+ const stat=(o.readStat||[]).map(s=>`<span class=chip>${esc(s.stat)} ${esc(s.counts)}</span>`).join('');
+ const head=`<div class=panel><div class=big><div><span class=v>${fmtHours(o.totalReadTime)}</span> <span class=l>小时总阅读</span></div><div><span class=v>${o.readDays}</span> <span class=l>天</span></div><div><span class=v>${o.authorCount}</span> <span class=l>位作者</span></div></div><div class=chips style=margin-top:10px>${stat}</div></div>`;
+ const yc=`<div class=panel><h3>按年阅读时长</h3>${barChart(o.byYear.map(y=>({label:y.label,tick:y.label,value:y.seconds})))}</div>`;
+ const hc=`<div class=panel><h3>时段分布 · ${esc(o.preferTimeWord||'')}</h3>${barChart((o.preferTime||[]).map((v,i)=>({label:i+'时',tick:i%6===0?i:'',value:v})),{h:120})}</div>`;
+ const cmax=Math.max(1,...o.categories.map(c=>c.seconds));
+ const cats=`<div class=panel><h3>偏好分类 Top</h3>${o.categories.map(c=>`<div class=hbar><span class=nm>${esc(c.title||'')}</span><span class=tk><i style="width:${(c.seconds/cmax*100).toFixed(0)}%"></i></span><span class=vv>${fmtHours(c.seconds)}h</span></div>`).join('')}</div>`;
+ const auth=`<div class=panel><h3>常读作者 Top</h3>${o.authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`;
+ sec.className='';sec.innerHTML=head+`<div class=stats-grid>${yc}${hc}</div><div class=stats-grid>${cats}${auth}</div>`}
+loadSettings();load();loadStats();</script></body></html>""".encode("utf-8")
 
 
 def make_handler(db_path: Path):
@@ -276,6 +351,8 @@ def make_handler(db_path: Path):
                     )
                 elif parsed.path == "/api/summary":
                     _json(self, summary(conn))
+                elif parsed.path == "/api/stats":
+                    _json(self, _reading_stats(conn))
                 elif parsed.path == "/api/books":
                     limit = min(max(int(query.get("limit", [20])[0]), 1), 5000)
                     rows = conn.execute(
