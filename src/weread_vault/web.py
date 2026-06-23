@@ -246,7 +246,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .modal.show{display:block}
 .sheet{max-width:760px;margin:40px auto;background:var(--bg);border:1px solid var(--line);border-radius:16px;box-shadow:0 20px 60px #0007;overflow:hidden}
 .bh{display:flex;gap:18px;padding:24px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
-.bh .cover{width:84px;flex:0 0 84px}
+.bh .cover{width:84px;height:112px;flex:0 0 84px;align-self:flex-start}
 .bh .bi{flex:1;min-width:0}.bh h3{margin:0 0 4px;font-size:19px;letter-spacing:-.01em}.bh .a{color:var(--muted);font-size:13px}
 .bh .st{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 .bkintro{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.55;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
@@ -268,6 +268,10 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .pop .tx{font-size:14px;line-height:1.62}.pop .ft{margin-top:6px;font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:10px}
 .rv{margin:12px 0;padding:13px 15px;background:var(--card);border:1px solid var(--line);border-radius:11px}
 .rv .au{font-size:12px;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between;gap:10px}.rv .tx{font-size:14px;line-height:1.62}.rv .ft{margin-top:7px;display:flex;justify-content:flex-end}
+.simhint{font-size:12px;color:var(--muted);margin:8px 0 14px}
+.simgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px 14px}
+.simbook{cursor:pointer}.simbook .cover{aspect-ratio:3/4}.simbook .t{font-size:12px;margin-top:7px;line-height:1.32;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@media(max-width:620px){.simgrid{grid-template-columns:repeat(3,1fr)}}
 .cp{background:transparent;border:0;color:var(--muted);font-size:12px;cursor:pointer;padding:2px 8px;border-radius:6px;flex:0 0 auto}
 .cp:hover{background:color-mix(in srgb,var(--brand) 14%,transparent);color:var(--brand)}
 .bhx{display:flex;align-items:center;gap:8px;align-self:flex-start}
@@ -313,13 +317,13 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <div id='modal' class='modal'><div class='sheet' id='sheet'></div></div>
 <script>
 const e=x=>document.getElementById(x),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const SVG=p=>`<svg class=ic viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round>${p}</svg>`;
+const SVG=p=>`<svg class='ic' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>${p}</svg>`;
 const ICO={book:SVG("<path d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/><path d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/>"),
- stats:SVG("<line x1=12 y1=20 x2=12 y2=10/><line x1=18 y1=20 x2=18 y2=4/><line x1=6 y1=20 x2=6 y2=16/>"),
- search:SVG("<circle cx=11 cy=11 r=8/><line x1=21 y1=21 x2=16.65 y2=16.65/>"),
+ stats:SVG("<line x1='12' y1='20' x2='12' y2='10'/><line x1='18' y1='20' x2='18' y2='4'/><line x1='6' y1='20' x2='6' y2='16'/>"),
+ search:SVG("<circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/>"),
  sync:SVG("<polyline points='23 4 23 10 17 10'/><polyline points='1 20 1 14 7 14'/><path d='M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15'/>"),
- copy:SVG("<rect x=9 y=9 width=13 height=13 rx=2 ry=2/><path d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/>"),
- ext:SVG("<path d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/><polyline points='15 3 21 3 21 9'/><line x1=10 y1=14 x2=21 y2=3/>")};
+ copy:SVG("<rect x='9' y='9' width='13' height='13' rx='2' ry='2'/><path d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/>"),
+ ext:SVG("<path d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/><polyline points='15 3 21 3 21 9'/><line x1='10' y1='14' x2='21' y2='3'/>")};
 const PAL=[['#155eef','#7c3aed'],['#0891b2','#0e7490'],['#db2777','#9d174d'],['#ea580c','#b45309'],['#059669','#047857'],['#4f46e5','#7c3aed'],['#dc2626','#991b1b'],['#0d9488','#115e59']];
 function hue(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return PAL[h%PAL.length]}
 function cover(x){const t=x.title||'未命名',fallback=ph(t);if(x.cover){return fallback+`<img loading=lazy src="${esc(x.cover)}" alt="${esc(t)}" onerror="this.remove()">`}return fallback}
@@ -409,7 +413,8 @@ e('search').onsubmit=ev=>{ev.preventDefault();curQ=e('q').value.trim();if(!curQ)
 const modal=e('modal');
 function closeBook(){modal.classList.remove('show');document.body.style.overflow=''}
 modal.onclick=ev=>{if(ev.target===modal)closeBook()};
-modal.addEventListener('click',ev=>{const btn=ev.target.closest('.cp');if(!btn)return;ev.stopPropagation();const item=btn.closest('.hl,.th,.pop,.rv'),tx=item&&item.querySelector('.tx');if(!tx)return;navigator.clipboard.writeText(tx.textContent.trim()).then(()=>{const old=btn.textContent;btn.textContent='✓';setTimeout(()=>{btn.textContent=old},1200)})});
+modal.addEventListener('click',ev=>{const btn=ev.target.closest('.cp');if(!btn)return;ev.stopPropagation();const item=btn.closest('.hl,.th,.pop,.rv'),tx=item&&item.querySelector('.tx');if(!tx)return;navigator.clipboard.writeText(tx.textContent.trim()).then(()=>{const old=btn.innerHTML;btn.textContent='✓';setTimeout(()=>{btn.innerHTML=old},1200)})});
+modal.addEventListener('click',ev=>{const sb=ev.target.closest('.simbook');if(!sb)return;openBook(sb.dataset.id,{title:sb.dataset.title,author:sb.dataset.author,cover:sb.dataset.cover,weread_url:sb.dataset.url})});
 document.addEventListener('keydown',ev=>{if(ev.key==='Escape')closeBook()});
 function star(n){n=n||0;return n>0?'★'.repeat(Math.min(n,5)):''}
 function renderMine(d){
@@ -430,7 +435,7 @@ async function openBook(id,store){if(!id)return;modal.classList.add('show');docu
  let mine=null;
  if(!store){const d=await fetch('/api/book?book_id='+encodeURIComponent(id)).then(r=>r.json());if(!d.error)mine=d}
  const b=mine?mine.book:(store||{}),p=Math.max(0,Math.min(100,b.reading_progress||0));
- const tabs=mine?['mine','popular','reviews']:['popular','reviews'];const LABEL={mine:'我的笔记',popular:'热门划线',reviews:'书评'};
+ const tabs=mine?['mine','popular','reviews','similar']:['popular','reviews','similar'];const LABEL={mine:'我的笔记',popular:'热门划线',reviews:'书评',similar:'相关推荐'};
  const meta=mine?`${b.rating?`<span class=chip>推荐 ${(b.rating/10).toFixed(1)}%</span>`:''}${b.word_count?`<span class=chip>${(b.word_count/10000).toFixed(1)} 万字</span>`:''}${b.publisher?`<span class=chip>${esc(b.publisher)}</span>`:''}`:'';
  const st=mine?`<div class=st><span class=chip>进度 ${p}%</span><span class=chip>划线 ${mine.highlights.length}</span><span class=chip>想法 ${mine.thoughts.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}${meta}</div>`:'';
  const intro=mine&&b.intro?`<div class=bkintro>${esc(b.intro)}</div>`:'';
@@ -446,11 +451,13 @@ async function openBook(id,store){if(!id)return;modal.classList.add('show');docu
   if(t==='mine'){wrap.innerHTML=renderMine(mine);const c=e('copymd');if(c)c.onclick=()=>navigator.clipboard.writeText(toMarkdown(mine)).then(()=>{c.textContent='已复制 ✓';setTimeout(()=>c.textContent='复制 Markdown',1500)});return}
   if(cache[t]){wrap.innerHTML=cache[t];return}
   wrap.innerHTML='<div class=note-empty>加载中…</div>';
-  const data=await fetch(`/api/book-extra?book_id=${encodeURIComponent(id)}&kind=${t}`).then(r=>r.json());
+  const qs=`/api/book-extra?book_id=${encodeURIComponent(id)}&kind=${t}`+(t==='similar'?`&author=${encodeURIComponent(b.author||'')}`:'');
+  const data=await fetch(qs).then(r=>r.json());
   if(data.error){wrap.innerHTML=`<div class=note-empty>${esc(data.error)}</div>`;return}
   let html;
   if(t==='popular'){const its=data.items||[];html='<div class=notes>'+(its.length?its.map(x=>`<div class=pop><div class=tx>${esc(x.markText||'')}</div><div class=ft><span>${esc(x.chapter||'')}</span><span>${x.count} 人划线 · <button class=cp type=button title=复制>${ICO.copy}</button></span></div></div>`).join(''):'<div class=note-empty>暂无热门划线。</div>')+'</div>'}
-  else{const rs=data.reviews||[];html='<div class=notes>'+(rs.length?rs.map(x=>`<div class=rv><div class=au><span>${esc(x.author||'匿名')} ${star(x.star)}</span><span>${x.likes} 赞</span></div><div class=tx>${esc(x.content||'')}</div><div class=ft><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`).join(''):'<div class=note-empty>暂无公开书评。</div>')+'</div>'}
+  else if(t==='reviews'){const rs=data.reviews||[];html='<div class=notes>'+(rs.length?rs.map(x=>`<div class=rv><div class=au><span>${esc(x.author||'匿名')} ${star(x.star)}</span><span>${x.likes} 赞</span></div><div class=tx>${esc(x.content||'')}</div><div class=ft><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`).join(''):'<div class=note-empty>暂无公开书评。</div>')+'</div>'}
+  else{const bs=data.books||[];html='<div class=notes>'+(bs.length?`<div class=simhint>同作者「${esc(data.by||b.author||'')}」的其他书</div><div class=simgrid>`+bs.map(x=>`<div class=simbook data-id='${esc(x.book_id)}' data-title='${esc(x.title||'')}' data-author='${esc(x.author||'')}' data-cover='${esc(x.cover||'')}' data-url='${esc(x.weread_url||'')}'><div class=cover>${cover(x)}</div><div class=t>${esc(x.title||'')}</div></div>`).join('')+'</div>':'<div class=note-empty>没找到同作者的其他书。</div>')+'</div>'}
   cache[t]=html;wrap.innerHTML=html;
  }
  e('sheet').querySelectorAll('.tabs button').forEach(btn=>btn.onclick=()=>show(btn.dataset.t));
@@ -593,7 +600,28 @@ def make_handler(db_path: Path):
                         _json(self, {"error": "缺少 book_id"}, HTTPStatus.BAD_REQUEST)
                         return
                     try:
-                        if kind == "reviews":
+                        if kind == "similar":
+                            # /book/similar errors out from the gateway, so recommend by same author.
+                            author = query.get("author", [""])[0].strip()
+                            if not author:
+                                row = conn.execute("SELECT author FROM books WHERE book_id=?", (book_id,)).fetchone()
+                                author = (row["author"] if row else "") or ""
+                            related = []
+                            if author:
+                                data = Gateway().call("/store/search", keyword=author, count=20)
+                                seen = {book_id}
+                                for tab in data.get("results", []):
+                                    for entry in (tab.get("books") or []):
+                                        info = entry.get("bookInfo") or {}
+                                        bid = info.get("bookId")
+                                        if bid and bid not in seen and (info.get("author") or "") == author:
+                                            seen.add(bid)
+                                            related.append({
+                                                "book_id": bid, "title": info.get("title"), "author": info.get("author"),
+                                                "cover": (info.get("cover") or "").replace("/s_", "/t7_"),
+                                                "weread_url": weread_url(bid)})
+                            _json(self, {"books": related[:12], "by": author})
+                        elif kind == "reviews":
                             data = Gateway().call("/review/list", bookId=book_id, count=20)
                             reviews = []
                             for wrapper in data.get("reviews", []):
