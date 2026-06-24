@@ -47,7 +47,8 @@ def parser() -> argparse.ArgumentParser:
     sub = result.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="创建本地 SQLite 数据库")
     sync = sub.add_parser("sync", help="从微信读书同步到本地库")
-    sync.add_argument("scope", nargs="?", choices=("all", "shelf", "books", "notes", "stats", "info"), default="all")
+    sync.add_argument("scope", nargs="?",
+                      choices=("all", "shelf", "books", "notes", "stats", "info", "popular"), default="all")
     sync.add_argument("--full-notes", action="store_true", help="忽略变更水位，重新同步所有有笔记的书")
     sync.add_argument("--refresh", action="store_true", help="sync info 专用：重抓所有书的富信息（含简介），不只补缺")
     sync.add_argument("--limit", type=int, help="最多同步多少本笔记书；适合首次测试或分批同步")
@@ -64,6 +65,8 @@ def parser() -> argparse.ArgumentParser:
     markdown = export_sub.add_parser("markdown", help="导出为 Markdown")
     markdown.add_argument("--out", required=True, help="目标目录")
     markdown.add_argument("--force", action="store_true", help="忽略增量，强制重写所有文件")
+    markdown.add_argument("--with-popular", action="store_true",
+                          help="合并导出他人热门划线（需先 weread-vault sync popular）")
     flomo = export_sub.add_parser("flomo", help="导出到 flomo（每本书一条 memo）")
     flomo.add_argument("--webhook", help="flomo 专属 API；默认读环境变量 FLOMO_WEBHOOK")
     flomo.add_argument("--limit", type=int, help="最多导出多少本")
@@ -136,6 +139,8 @@ def main(argv: list[str] | None = None) -> None:
                     count = service.stats()
                 elif args.scope == "info":
                     count = service.info(args.limit, args.refresh)
+                elif args.scope == "popular":
+                    count = service.popular(args.limit, args.refresh)
                 else:
                     count = service.all(args.full_notes, args.limit)
             print(f"同步完成：{count}")
@@ -196,7 +201,8 @@ def main(argv: list[str] | None = None) -> None:
             _require_db(db_path)
             with connect(db_path) as conn:
                 if args.export_command == "markdown":
-                    count = export_markdown(conn, Path(args.out).expanduser(), force=args.force)
+                    count = export_markdown(conn, Path(args.out).expanduser(), force=args.force,
+                                            with_popular=args.with_popular)
                     print(f"已更新 {count} 篇 Markdown（无变化的已跳过）")
                 elif args.export_command == "flomo":
                     webhook = args.webhook or os.environ.get("FLOMO_WEBHOOK")

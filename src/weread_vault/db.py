@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Columns added after v1 (rich /book/info metadata). Added idempotently to existing
 # databases via PRAGMA table_info so upgrading never drops data.
@@ -87,6 +87,17 @@ CREATE TABLE IF NOT EXISTS sync_state (
   value TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS popular_highlights (
+  book_id TEXT NOT NULL REFERENCES books(book_id) ON DELETE CASCADE,
+  chapter_uid INTEGER,
+  chapter_title TEXT,
+  mark_text TEXT,
+  text_range TEXT,
+  count INTEGER,
+  synced_at INTEGER NOT NULL,
+  PRIMARY KEY (book_id, text_range)
+);
+CREATE INDEX IF NOT EXISTS idx_pop_book ON popular_highlights(book_id);
 CREATE INDEX IF NOT EXISTS idx_books_sort ON books(sort DESC);
 CREATE INDEX IF NOT EXISTS idx_highlights_book ON highlights(book_id);
 CREATE INDEX IF NOT EXISTS idx_thoughts_book ON thoughts(book_id);

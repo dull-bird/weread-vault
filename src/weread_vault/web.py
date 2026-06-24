@@ -367,7 +367,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <section class='view' data-view='stats' hidden><h2>阅读统计 <span class='n' id='stats-word'></span></h2><div id='stats' class='empty'>加载中…</div></section>
 <section class='view' data-view='search' hidden><h2>搜索 <span class='smode' id='smode'><button data-m='notes' class='on' type='button'>本地笔记</button><button data-m='store' type='button'>书城</button></span></h2><form id='search'><input id='q' placeholder='输入关键词，搜索划线和想法'><button>搜索</button></form><div id='results' class='res empty'>输入关键词后搜索。</div></section>
 <section class='view' data-view='sync' hidden><h2>同步设置</h2>
-<div class='actions'><button id='sync-btn' type='button'>同步</button><button id='full-btn' class='ghost' type='button'>完整重扫</button><span id='sync-msg' class='msg'></span><div id='keybox' class='keybox'><input id='api-key' type='password' autocomplete='off' placeholder='粘贴 WEREAD_API_KEY，仅保存到本机私有配置'><button id='save-key' class='ghost' type='button'>保存 API Key</button></div></div>
+<div class='actions'><button id='sync-btn' type='button'>同步</button><button id='full-btn' class='ghost' type='button'>完整重扫</button><button id='popular-btn' class='ghost' type='button' title='拉取他人热门划线，用于导出合并'>同步热门划线</button><span id='sync-msg' class='msg'></span><div id='keybox' class='keybox'><input id='api-key' type='password' autocomplete='off' placeholder='粘贴 WEREAD_API_KEY，仅保存到本机私有配置'><button id='save-key' class='ghost' type='button'>保存 API Key</button></div></div>
 <div id='prog' class='prog'><i></i></div>
 <p class='sub'>「同步」会先拉取全书架，再增量同步有变更的笔记，并追加阅读统计。首次可能较慢。API Key 仅保存到本机私有配置，不会上传。</p>
 <div class='dz'><h3>账号与数据</h3>
@@ -430,9 +430,9 @@ async function loadSettings(){let x=await fetch('/api/settings').then(r=>r.json(
 e('save-key').onclick=async()=>{const key=e('api-key').value.trim(),msg=e('sync-msg');if(!key){msg.className='msg err';msg.textContent='API Key 不能为空。';return}e('save-key').disabled=true;try{let res=await fetch('/api/settings/api-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key})});let body=await res.json();if(!res.ok)throw new Error(body.error||'保存失败');e('api-key').value='';msg.className='msg ok';msg.textContent='API Key 已保存到本机私有配置。';await loadSettings()}catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}finally{e('save-key').disabled=false}};
 e('change-key').onclick=async()=>{const m=e('dz-msg');try{await fetch('/api/settings/clear-key',{method:'POST'});m.className='msg ok';m.textContent='已清除 API Key，可在上方重新粘贴新的 Key。';await loadSettings()}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};
 e('reset-data').onclick=async()=>{if(!confirm('确定清空本机全部阅读数据？书目 / 划线 / 想法 / 统计都会删除（API Key 保留）。此操作不可撤销。'))return;const m=e('dz-msg');m.className='msg';m.textContent='清空中…';try{let r=await fetch('/api/reset',{method:'POST'});let bd=await r.json();if(!r.ok)throw new Error(bd.error||'失败');m.className='msg ok';m.textContent='已清空。重新同步即可拉取当前账号的数据。';await load();await loadStats();await loadSettings()}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};
-async function runSync(mode){const sbtn=e('sync-btn'),fbtn=e('full-btn'),msg=e('sync-msg'),prog=e('prog'),bar=prog.querySelector('i'),slabel=sbtn.textContent,flabel=fbtn.textContent;
- sbtn.disabled=fbtn.disabled=true;(mode==='full'?fbtn:sbtn).textContent='同步中…';
- msg.className='msg';msg.textContent='首次同步可能较慢，正在连接微信读书…';prog.className='prog show indet';bar.style.width='';
+async function runSync(mode){const btns=[e('sync-btn'),e('full-btn'),e('popular-btn')],labels=btns.map(b=>b.textContent),msg=e('sync-msg'),prog=e('prog'),bar=prog.querySelector('i');
+ const active={sync:0,full:1,popular:2}[mode];btns.forEach(b=>b.disabled=true);btns[active].textContent='同步中…';
+ msg.className='msg';msg.textContent=mode==='popular'?'正在拉取他人热门划线…':'首次同步可能较慢，正在连接微信读书…';prog.className='prog show indet';bar.style.width='';
  let result=null;
  try{
   const res=await fetch('/api/sync/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});
@@ -444,12 +444,13 @@ async function runSync(mode){const sbtn=e('sync-btn'),fbtn=e('full-btn'),msg=e('
     if(o.done){result=o.counts;continue}
     if(o.line){msg.textContent=o.line;const m=o.line.match(/\[(\d+)\/(\d+)\]/);if(m&&+m[2]>0){prog.className='prog show';bar.style.width=Math.round(m[1]/m[2]*100)+'%'}}}}
   prog.className='prog show';bar.style.width='100%';
-  msg.className='msg ok';msg.textContent=`同步完成：全书架 ${result?.shelf??0} 本，有笔记 ${result?.books??0} 本，更新笔记 ${result?.notes??0} 本，统计 +${result?.stats??0}`;
+  msg.className='msg ok';msg.textContent=mode==='popular'?`已同步 ${result?.popular??0} 本书的热门划线。导出加 --with-popular 即可合并。`:`同步完成：全书架 ${result?.shelf??0} 本，有笔记 ${result?.books??0} 本，更新笔记 ${result?.notes??0} 本，统计 +${result?.stats??0}`;
   await load();await loadSettings();
  }catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}
- finally{sbtn.disabled=fbtn.disabled=false;sbtn.textContent=slabel;fbtn.textContent=flabel;setTimeout(()=>{e('prog').className='prog'},1000)}}
+ finally{btns.forEach((b,i)=>{b.disabled=false;b.textContent=labels[i]});setTimeout(()=>{e('prog').className='prog'},1000)}}
 e('sync-btn').onclick=()=>runSync('sync');
 e('full-btn').onclick=()=>runSync('full');
+e('popular-btn').onclick=()=>runSync('popular');
 function fmtDate(ts){if(!ts)return '';const d=new Date(ts*1000);if(isNaN(d))return '';const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`}
 let curQ='',curPage=1;
 async function doSearch(page){const q=curQ;if(!q)return;const res=e('results');
@@ -872,17 +873,22 @@ def make_handler(db_path: Path):
                     pass
 
             try:
-                emit({"line": "正在同步书架…（首次可能较慢）"})
                 with connect(db_path) as conn:
                     service = SyncService(conn, Gateway(), report=lambda message: emit({"line": message}))
-                    counts = {"shelf": 0, "books": 0, "notes": 0, "stats": 0}
-                    counts["shelf"] = service.shelf()
-                    counts["books"] = service.books()
-                    emit({"line": "书架已就绪，开始同步笔记…"})
-                    counts["notes"] = service.notes(full=(mode == "full"))
-                    emit({"line": "同步阅读统计…"})
-                    counts["stats"] = service.stats()
-                    emit({"done": True, "counts": counts})
+                    if mode == "popular":
+                        emit({"line": "正在同步他人热门划线（用于导出合并）…"})
+                        counts = {"popular": service.popular()}
+                        emit({"done": True, "counts": counts})
+                    else:
+                        emit({"line": "正在同步书架…（首次可能较慢）"})
+                        counts = {"shelf": 0, "books": 0, "notes": 0, "stats": 0}
+                        counts["shelf"] = service.shelf()
+                        counts["books"] = service.books()
+                        emit({"line": "书架已就绪，开始同步笔记…"})
+                        counts["notes"] = service.notes(full=(mode == "full"))
+                        emit({"line": "同步阅读统计…"})
+                        counts["stats"] = service.stats()
+                        emit({"done": True, "counts": counts})
             except Exception as error:  # noqa: BLE0001 — surfaced to the page as a stream error line
                 emit({"error": str(error)})
             finally:

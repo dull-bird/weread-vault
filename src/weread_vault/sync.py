@@ -64,6 +64,45 @@ class SyncService:
     def shelf(self) -> int:
         return self._run("shelf", self._sync_shelf)
 
+    def popular(self, limit: int | None = None, refresh: bool = False) -> int:
+        return self._run("popular", lambda: self._sync_popular(limit, refresh))
+
+    def _sync_popular(self, limit: int | None, refresh: bool) -> int:
+        # Other readers' popular highlights, for books you have notes on (so export can merge them).
+        # Incremental by default: only books without popular rows yet; refresh re-fetches all.
+        where = ("b.total_notes>0" if refresh else
+                 "b.total_notes>0 AND NOT EXISTS (SELECT 1 FROM popular_highlights p WHERE p.book_id=b.book_id)")
+        sql = f"SELECT book_id, title FROM books b WHERE {where} ORDER BY sort DESC"  # controlled fragment
+        if limit is not None:
+            sql += f" LIMIT {int(limit)}"
+        rows = self.conn.execute(sql).fetchall()
+        total = len(rows)
+        self.report(f"热门划线：待同步 {total} 本")
+        done = 0
+        for index, book in enumerate(rows, 1):
+            try:
+                payload = self.gateway.call("/book/bestbookmarks", bookId=book["book_id"])
+                chapters = {c.get("chapterUid"): c.get("title") for c in (payload.get("chapters") or [])}
+                now = int(time.time())
+                with self.conn:
+                    self.conn.execute("DELETE FROM popular_highlights WHERE book_id=?", (book["book_id"],))
+                    for item in payload.get("items") or []:
+                        if not item.get("markText") or not item.get("range"):
+                            continue
+                        self.conn.execute(
+                            """INSERT OR REPLACE INTO popular_highlights
+                            (book_id,chapter_uid,chapter_title,mark_text,text_range,count,synced_at)
+                            VALUES (?,?,?,?,?,?,?)""",
+                            (book["book_id"], item.get("chapterUid"), chapters.get(item.get("chapterUid")),
+                             item.get("markText"), item.get("range"), item.get("totalCount") or 0, now),
+                        )
+                done += 1
+                self.report(f"热门划线：[{index}/{total}] {book['title'] or book['book_id']}")
+            except Exception as error:
+                self.report(f"热门划线：[{index}/{total}] {book['title'] or book['book_id']} 失败：{error}")
+            time.sleep(self.gateway.sleep_seconds)
+        return done
+
     def all(self, full_notes: bool = False, note_limit: int | None = None) -> dict[str, int]:
         return {"shelf": self.shelf(), "books": self.books(),
                 "notes": self.notes(full_notes, note_limit), "stats": self.stats()}

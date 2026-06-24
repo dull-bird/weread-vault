@@ -5,7 +5,27 @@ import unittest
 from pathlib import Path
 
 from weread_vault.db import connect, initialize
-from weread_vault.export import export_markdown
+from weread_vault.export import _merge_highlights, export_markdown
+
+
+def _row(chapter_uid, title, text, text_range, count=0):
+    return {"chapter_uid": chapter_uid, "chapter_title": title, "mark_text": text,
+            "text_range": text_range, "count": count}
+
+
+class MergeTests(unittest.TestCase):
+    def test_overlapping_popular_folds_into_own_and_order_by_position(self):
+        own = [_row(1, "C1", "我的后半句", "100-150"), _row(1, "C1", "我的前半句", "10-40")]
+        popular = [_row(1, "C1", "热门重叠", "120-140", 900), _row(1, "C1", "热门独立", "200-230", 500)]
+        merged = _merge_highlights(own, popular)
+        entries = merged[1]["entries"]
+        # ordered by position: 10-40, 100-150, 200-230
+        self.assertEqual([e["text"] for e in entries], ["我的前半句", "我的后半句", "热门独立"])
+        # the overlapping popular folded its count into the own highlight, not a separate entry
+        self.assertEqual(entries[1]["kind"], "own")
+        self.assertEqual(entries[1]["count"], 900)
+        self.assertEqual(entries[2]["kind"], "pop")
+        self.assertEqual(entries[2]["count"], 500)
 
 
 class ExportTests(unittest.TestCase):

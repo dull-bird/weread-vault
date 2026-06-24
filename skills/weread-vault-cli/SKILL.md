@@ -140,6 +140,13 @@ For Obsidian, export into a folder inside the user's vault:
 weread-vault export markdown --out "/path/to/Obsidian Vault/WereadNotes"
 ```
 
+To merge other readers' popular highlights into the export, first sync them (one API call per noted book, incremental), then export with `--with-popular`. Overlapping highlights are folded into the user's own (annotated with the reader count); non-overlapping popular ones are listed separately, all in document order:
+
+```bash
+weread-vault sync popular
+weread-vault export markdown --out "/path/to/Obsidian Vault/WereadNotes" --with-popular
+```
+
 The backup command uses SQLite's backup API, so it remains consistent even if the web preview is open.
 
 ## Update the official protocol Skill

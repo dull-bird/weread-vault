@@ -91,6 +91,10 @@ weread-vault serve --open
 weread-vault export markdown --out ~/Documents/weread-notes
 weread-vault backup --out ~/Backups/weread-vault.db
 
+# 合并导出他人热门划线（先同步，再用 --with-popular）
+weread-vault sync popular
+weread-vault export markdown --out ~/Documents/weread-notes --with-popular
+
 # 导出到 flomo（每本书一条 memo，带 #微信读书 标签）
 weread-vault export flomo --webhook "$FLOMO_WEBHOOK"
 

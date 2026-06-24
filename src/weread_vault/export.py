@@ -44,7 +44,54 @@ def _user_frontmatter(path: Path) -> list[str]:
     return preserved
 
 
-def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = False) -> int:
+def _range_span(value: str | None) -> tuple[int, int] | None:
+    if not value:
+        return None
+    parts = str(value).split("-")
+    if not parts[0].lstrip("-").isdigit():
+        return None
+    start = int(parts[0])
+    end = int(parts[1]) if len(parts) > 1 and parts[1].lstrip("-").isdigit() else start
+    return (start, end)
+
+
+def _merge_highlights(highlights: list, popular: list) -> dict:
+    """Merge own and popular highlights per chapter, ordered by position. A popular highlight that
+    overlaps an own one is folded into it (annotated with the reader count) instead of duplicated.
+    Returns {chapter_uid: {"title": str, "entries": [ {own/text/count/pos} ... ordered ]}}."""
+    chapters: dict = {}
+
+    def bucket(chapter_uid, title):
+        return chapters.setdefault(chapter_uid, {"title": title, "own": [], "pop": []})
+
+    for h in highlights:
+        span = _range_span(h["text_range"])
+        bucket(h["chapter_uid"], h["chapter_title"])["own"].append(
+            {"text": h["mark_text"] or "", "span": span, "pos": span[0] if span else 0, "count": 0})
+    for p in popular:
+        span = _range_span(p["text_range"])
+        bucket(p["chapter_uid"], p["chapter_title"])["pop"].append(
+            {"text": p["mark_text"] or "", "span": span, "pos": span[0] if span else 0, "count": p["count"] or 0})
+
+    result: dict = {}
+    for chapter_uid, data in chapters.items():
+        entries: list = []
+        for own in data["own"]:
+            for pop in data["pop"]:
+                if own["span"] and pop["span"] and own["span"][0] <= pop["span"][1] and pop["span"][0] <= own["span"][1]:
+                    own["count"] = max(own["count"], pop["count"])  # overlapping → fold count into own
+                    pop["merged"] = True
+            entries.append({"kind": "own", **own})
+        for pop in data["pop"]:
+            if not pop.get("merged"):
+                entries.append({"kind": "pop", **pop})
+        entries.sort(key=lambda item: item["pos"])
+        result[chapter_uid] = {"title": data["title"], "entries": entries}
+    return result
+
+
+def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = False,
+                    with_popular: bool = False) -> int:
     """渲染每本有笔记的书为 markdown。返回本次实际写入（新建或有变化）的篇数。
 
     增量：渲染结果与磁盘内容一致时跳过写入，不改动 mtime，避免触发
@@ -62,6 +109,9 @@ def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = F
         thoughts = conn.execute(
             "SELECT * FROM thoughts WHERE book_id=? ORDER BY is_book_review DESC, chapter_uid", (book["book_id"],)
         ).fetchall()
+        popular = conn.execute(
+            "SELECT * FROM popular_highlights WHERE book_id=? ORDER BY chapter_uid, text_range", (book["book_id"],)
+        ).fetchall() if with_popular else []
         if not highlights and not thoughts:
             continue
         filename = _safe_name(book["title"])
@@ -97,7 +147,19 @@ def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = F
             lines.extend(["## 我的书评", ""])
             for item in book_reviews:
                 lines.extend([item["content"] or "", "", f"<small>{_date(item['create_time'])}</small>", ""])
-        if highlights:
+        if with_popular and (highlights or popular):
+            merged = _merge_highlights(list(highlights), list(popular))
+            lines.extend(["## 划线（含他人热门）", ""])
+            for chapter_uid, chapter in merged.items():
+                if chapter["title"]:
+                    lines.extend([f"### {chapter['title']}", ""])
+                for entry in chapter["entries"]:
+                    if entry["kind"] == "own":
+                        suffix = f" <small>🔥 {entry['count']} 人也划</small>" if entry["count"] else ""
+                        lines.extend([f"- {entry['text']}{suffix}", ""])
+                    else:
+                        lines.extend([f"- 🔥 {entry['text']} <small>（{entry['count']} 人划线）</small>", ""])
+        elif highlights:
             lines.extend(["## 划线", ""])
             current_chapter = object()
             for item in highlights:
