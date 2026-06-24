@@ -89,7 +89,41 @@ def _session_distribution(conn: sqlite3.Connection, gap: int = 1800) -> dict[str
     buckets = [("≤5 分钟", 0, 300), ("5–15 分钟", 300, 900), ("15–30 分钟", 900, 1800),
                ("30–60 分钟", 1800, 3600), (">60 分钟", 3600, float("inf"))]
     distribution = [{"label": label, "count": sum(1 for s in spans if lo <= s < hi)} for label, lo, hi in buckets]
-    return {"total": len(spans), "distribution": distribution}
+    total = len(spans)
+    short = sum(d["count"] for d in distribution[:2])   # ≤15 分钟
+    long = sum(d["count"] for d in distribution[3:])    # ≥30 分钟
+    short_share = short / total if total else 0
+    if short_share >= 0.7:
+        verdict = f"碎片化严重 — {round(short_share * 100)}% 的阅读会话不足 15 分钟"
+    elif short_share >= 0.5:
+        verdict = f"偏碎片化 — 约半数（{round(short_share * 100)}%）会话短于 15 分钟"
+    elif short_share >= 0.3:
+        verdict = "碎片与整片较均衡"
+    else:
+        verdict = f"以整片阅读为主 — {round(long / total * 100) if total else 0}% 会话超过 30 分钟"
+    return {"total": total, "distribution": distribution, "verdict": verdict,
+            "shortShare": round(short_share, 3)}
+
+
+def _parse_period(payload: dict[str, object]) -> dict[str, object]:
+    total = payload.get("totalReadTime", 0) or 0
+    days = payload.get("readDays", 0) or 0
+    return {
+        "totalReadTime": total,
+        "readDays": days,
+        "dayAverage": int(total / days) if days else 0,
+        "compare": payload.get("compare"),
+        "readStat": payload.get("readStat", []),
+        "longest": [
+            {"title": (i.get("book") or {}).get("title"), "author": (i.get("book") or {}).get("author"),
+             "readSeconds": i.get("readTime", 0)}
+            for i in (payload.get("readLongest") or [])
+        ][:8],
+        "categories": [
+            {"title": c.get("categoryTitle"), "count": c.get("readingCount", 0), "seconds": c.get("readingTime", 0)}
+            for c in (payload.get("preferCategory") or [])
+        ][:8],
+    }
 
 
 def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
@@ -118,14 +152,16 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
         {"title": (item.get("book") or {}).get("title"), "readSeconds": item.get("readTime", 0)}
         for item in (overall.get("readLongest") or [])
     ][:10]
-    periods = {
-        mode: {"totalReadTime": by_mode[mode].get("totalReadTime", 0), "readDays": by_mode[mode].get("readDays", 0)}
-        for mode in ("weekly", "monthly", "annually")
-        if mode in by_mode
-    }
+    periods = {mode: _parse_period(by_mode[mode]) for mode in ("weekly", "monthly", "annually", "overall") if mode in by_mode}
     annual = by_mode.get("annually") or {}
     by_month = sorted(
         ({"label": time.gmtime(int(ts) + 8 * 3600).tm_mon, "seconds": secs} for ts, secs in (annual.get("readTimes") or {}).items()),
+        key=lambda item: item["label"],
+    )
+    monthly = by_mode.get("monthly") or {}
+    by_day_month = sorted(
+        ({"label": time.strftime("%m-%d", time.gmtime(int(ts) + 8 * 3600)), "seconds": secs}
+         for ts, secs in (monthly.get("readTimes") or {}).items()),
         key=lambda item: item["label"],
     )
     # Daily annotation activity from highlight timestamps — multi-year, GitHub-style heatmap.
@@ -136,7 +172,9 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
     return {
         "hasData": True,
         "sessions": _session_distribution(conn),
+        "periods": periods,
         "byMonth": by_month,
+        "byDayMonth": by_day_month,
         "heatmap": heatmap,
         "overall": {
             "totalReadTime": overall.get("totalReadTime", 0),
@@ -151,7 +189,6 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
             "preferCategoryWord": overall.get("preferCategoryWord", ""),
             "preferTimeWord": overall.get("preferTimeWord", ""),
         },
-        "periods": periods,
     }
 
 
@@ -205,14 +242,20 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .caxis{fill:var(--muted);font-size:9px}
 .hmlbl{fill:var(--muted);font-size:8px}
 .hmsel{font:inherit;font-size:12px;background:var(--card);border:1px solid var(--line);border-radius:7px;padding:2px 6px;color:var(--fg);cursor:pointer}
+.pbar{margin-bottom:14px}.cmp{font-size:12px;font-weight:600;margin-left:auto;align-self:center}.cmp.up{color:#0d9669}.cmp.down{color:#dc2626}
+.lead{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}.lead:last-child{border-bottom:0}
+.lead .rk{width:22px;height:22px;flex:0 0 22px;border-radius:6px;background:color-mix(in srgb,var(--brand) 12%,transparent);color:var(--brand);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center}
+.lead .li{flex:1;min-width:0}.lead .lt{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lead .la{font-size:11px;color:var(--muted)}
+.lead .lv{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.verdict{font-size:14px;font-weight:600;color:var(--brand);background:color-mix(in srgb,var(--brand) 9%,transparent);border-radius:10px;padding:10px 13px;margin-bottom:13px}
 .big{display:flex;gap:26px;flex-wrap:wrap;align-items:baseline}
 .big .v{font-size:27px;font-weight:700;letter-spacing:-.02em}.big .l{font-size:12px;color:var(--muted)}
 .hbar{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:13px}
 .hbar .nm{width:92px;flex:0 0 92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--fg)}
 .hbar .tk{flex:1;height:9px;border-radius:5px;background:var(--line);overflow:hidden}.hbar .tk i{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--brand2))}
 .hbar .vv{width:70px;flex:0 0 70px;text-align:right;font-size:12px;color:var(--muted)}
-.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:20px 16px}
-@media(max-width:860px){.grid{grid-template-columns:repeat(4,1fr)}}
+.grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:20px 16px}
+@media(max-width:860px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .list{display:flex;flex-direction:column;gap:8px}
 .lrow{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 14px;cursor:pointer;box-shadow:var(--shadow)}
 .lrow:hover{border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
@@ -249,7 +292,14 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .bh{display:flex;gap:18px;padding:24px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
 .bh .cover{width:84px;height:112px;flex:0 0 84px;align-self:flex-start}
 .bh .bi{flex:1;min-width:0}.bh h3{margin:0 0 4px;font-size:19px;letter-spacing:-.01em}.bh .a{color:var(--muted);font-size:13px}
-.bh .st{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.bh .st{margin-top:11px;display:flex;flex-direction:column;gap:9px}
+.minibar{display:flex;align-items:center;gap:9px;font-size:12px}
+.minibar .mblabel{color:var(--muted);width:32px;flex:0 0 32px}
+.minibar .mbtrack{flex:1;max-width:220px;height:7px;border-radius:4px;background:var(--line);overflow:hidden}.minibar .mbtrack i{display:block;height:100%;border-radius:4px}
+.minibar .mbval{color:var(--muted);width:42px;text-align:right;font-variant-numeric:tabular-nums}
+.chiprow{display:flex;gap:7px;flex-wrap:wrap;margin-top:1px}
+.chip.on-hl{background:color-mix(in srgb,#16a34a 15%,transparent);color:#15803d;border-color:transparent}
+.chip.on-th{background:color-mix(in srgb,#db2777 14%,transparent);color:#be185d;border-color:transparent}
 .bkintro{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.55;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
 .bkintro.open{-webkit-line-clamp:unset}.chip{font-size:12px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
 .bh .x{align-self:flex-start;background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:9px;width:34px;height:34px;font-size:18px;line-height:1;padding:0;cursor:pointer}
@@ -270,16 +320,16 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .rv{margin:12px 0;padding:13px 15px;background:var(--card);border:1px solid var(--line);border-radius:11px}
 .rv .au{font-size:12px;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between;gap:10px}.rv .tx{font-size:14px;line-height:1.62}.rv .ft{margin-top:7px;display:flex;justify-content:flex-end}
 .simhint{font-size:12px;color:var(--muted);margin:8px 0 14px}
-.simgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px 14px}
+.simgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px 14px}
 .simbook{cursor:pointer}.simbook .cover{aspect-ratio:3/4}.simbook .t{font-size:12px;margin-top:7px;line-height:1.32;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-@media(max-width:620px){.simgrid{grid-template-columns:repeat(3,1fr)}}
-.cp{background:transparent;border:0;color:var(--muted);font-size:12px;cursor:pointer;padding:2px 8px;border-radius:6px;flex:0 0 auto}
+@media(max-width:620px){.simgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.cp{background:transparent;border:0;color:var(--muted);font-size:12px;cursor:pointer;border-radius:6px;flex:0 0 auto;width:26px;height:22px;padding:0}
 .cp:hover{background:color-mix(in srgb,var(--brand) 14%,transparent);color:var(--brand)}
 .bhx{display:flex;align-items:center;gap:8px;align-self:flex-start}
 .wr{font-size:12px;color:var(--brand);text-decoration:none;border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line));border-radius:8px;padding:6px 10px;white-space:nowrap}.wr:hover{background:color-mix(in srgb,var(--brand) 10%,transparent)}
 .smode{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;vertical-align:middle}
 .smode button{background:var(--card);border:0;color:var(--muted);padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}.smode button.on{background:var(--brand);color:#fff}
-@media(max-width:620px){.cards{grid-template-columns:1fr}.grid{grid-template-columns:repeat(3,1fr);gap:16px 12px}.sheet{margin:0;border-radius:0;min-height:100vh}}
+@media(max-width:620px){.cards{grid-template-columns:1fr}.grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 12px}.sheet{margin:0;border-radius:0;min-height:100vh}}
 </style></head>
 <body><div class='layout'>
 <aside class='sidebar'>
@@ -437,8 +487,8 @@ async function openBook(id,store){if(!id)return;modal.classList.add('show');docu
  if(!store){const d=await fetch('/api/book?book_id='+encodeURIComponent(id)).then(r=>r.json());if(!d.error)mine=d}
  const b=mine?mine.book:(store||{}),p=Math.max(0,Math.min(100,b.reading_progress||0));
  const tabs=mine?['mine','popular','reviews','similar']:['popular','reviews','similar'];const LABEL={mine:'我的笔记',popular:'热门划线',reviews:'书评',similar:'相关推荐'};
- const meta=mine?`${b.rating?`<span class=chip>推荐 ${(b.rating/10).toFixed(1)}%</span>`:''}${b.word_count?`<span class=chip>${(b.word_count/10000).toFixed(1)} 万字</span>`:''}${b.publisher?`<span class=chip>${esc(b.publisher)}</span>`:''}`:'';
- const st=mine?`<div class=st><span class=chip>进度 ${p}%</span><span class=chip>划线 ${mine.highlights.length}</span><span class=chip>想法 ${mine.thoughts.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}${meta}</div>`:'';
+ const minibar=(label,val,grad)=>`<div class=minibar><span class=mblabel>${label}</span><span class=mbtrack><i style="width:${Math.max(0,Math.min(100,val))}%;background:${grad}"></i></span><span class=mbval>${val}%</span></div>`;
+ const st=mine?`<div class=st>${minibar('进度',p,'linear-gradient(90deg,var(--brand),var(--brand2))')}${b.rating?minibar('推荐',Math.round(b.rating/10),'linear-gradient(90deg,#f59e0b,#ef4444)'):''}<div class=chiprow><span class='chip${mine.highlights.length?' on-hl':''}'>划线 ${mine.highlights.length}</span><span class='chip${mine.thoughts.length?' on-th':''}'>想法 ${mine.thoughts.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}${b.word_count?`<span class=chip>${(b.word_count/10000).toFixed(1)} 万字</span>`:''}${b.publisher?`<span class=chip>${esc(b.publisher)}</span>`:''}</div></div>`:'';
  const intro=mine&&b.intro?`<div class=bkintro>${esc(b.intro)}</div>`:'';
  const header=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div>${st}${intro}</div><div class=bhx>${b.weread_url?`<a class=wr href='${esc(b.weread_url)}' target=_blank rel=noopener title='在微信读书中打开'>${ICO.ext}微信读书</a>`:''}<button class=x type=button title=关闭>×</button></div></div>`;
  const tabbar=`<div class=tabs>${tabs.map((t,i)=>`<button data-t='${t}' type=button class='${i===0?'on':''}'>${LABEL[t]}</button>`).join('')}</div>`;
@@ -492,25 +542,36 @@ function heatmapSVG(heat,year){const C=11,G=3,L=22;const first=new Date(year,0,1
  const wl=['一','三','五'].map((l,i)=>`<text x=0 y=${(i*2+1)*(C+G)+C+12} class=hmlbl>${l}</text>`).join('');
  return `<svg viewBox='0 0 ${W} ${H}' style='width:100%;max-width:${W}px;height:auto'><g transform='translate(0,12)'>${monlbl}${wl}${rects}</g></svg>`}
 document.querySelectorAll('.nav button').forEach(b=>{const k={shelf:'book',stats:'stats',search:'search',sync:'sync'}[b.dataset.view];if(k)b.insertAdjacentHTML('afterbegin',ICO[k]);b.onclick=()=>{const v=b.dataset.view;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('.view').forEach(s=>{s.hidden=s.dataset.view!==v})}});
+function fmtDur2(s){s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${m}m`:`${m}m`}
+function renderPeriod(p,key,charts){if(!p)return'<div class=note-empty>该周期暂无数据。</div>';
+ const cmp=p.compare,cmpTxt=(cmp==null)?'':`<span class='cmp ${cmp>=0?'up':'down'}'>较上个周期 ${cmp>=0?'↑':'↓'} ${Math.abs(Math.round(cmp*100))}%</span>`;
+ const head=`<div class=panel><div class=big><div><span class=v>${fmtDur2(p.totalReadTime)}</span> <span class=l>时长</span></div><div><span class=v>${p.readDays}</span> <span class=l>天</span></div><div><span class=v>${fmtDur2(p.dayAverage)}</span> <span class=l>日均</span></div>${cmpTxt}</div>${(p.readStat&&p.readStat.length)?`<div class=chips style=margin-top:12px>${p.readStat.map(s=>`<span class=chip>${esc(s.stat)} ${esc(s.counts)}</span>`).join('')}</div>`:''}</div>`;
+ const lead=p.longest.length?`<div class=panel><h3>读得最多</h3>${p.longest.map((x,i)=>`<div class=lead><span class=rk>${i+1}</span><div class=li><div class=lt>${esc(x.title||'')}</div><div class=la>${esc(x.author||'')}</div></div><span class=lv>${fmtDur2(x.readSeconds)}</span></div>`).join('')}</div>`:'';
+ const ccm=Math.max(1,...p.categories.map(c=>c.seconds||0));
+ const cats=p.categories.length?`<div class=panel><h3>阅读偏好</h3>${p.categories.map(c=>`<div class=hbar><span class=nm>${esc(c.title||'')}</span><span class=tk><i style="width:${(c.seconds/ccm*100).toFixed(0)}%"></i></span><span class=vv>${c.count}本 · ${fmtDur2(c.seconds)}</span></div>`).join('')}</div>`:'';
+ return head+(charts[key]||'')+((lead||cats)?`<div class=stats-grid>${lead}${cats}</div>`:'');}
 async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());const sec=e('stats');
  if(!d.hasData){sec.className='empty';sec.innerHTML='暂无统计数据，先到「同步设置」同步一次。';return}
  const o=d.overall;e('stats-word').textContent=o.preferCategoryWord||'';
- const stat=(o.readStat||[]).map(s=>`<span class=chip>${esc(s.stat)} ${esc(s.counts)}</span>`).join('');
- const head=`<div class=panel><div class=big><div><span class=v>${fmtHours(o.totalReadTime)}</span> <span class=l>小时总阅读</span></div><div><span class=v>${o.readDays}</span> <span class=l>天</span></div><div><span class=v>${o.authorCount}</span> <span class=l>位作者</span></div></div><div class=chips style=margin-top:10px>${stat}</div></div>`;
- const yc=`<div class=panel><h3>按年阅读时长</h3>${barChart(o.byYear.map(y=>({label:y.label,tick:y.label,value:y.seconds})))}</div>`;
  const hc=`<div class=panel><h3>时段分布 · ${esc(o.preferTimeWord||'')}</h3>${barChart((o.preferTime||[]).map((v,i)=>({label:i+'时',tick:i%6===0?i:'',value:v})),{h:120})}</div>`;
- const cmax=Math.max(1,...o.categories.map(c=>c.seconds));
- const cats=`<div class=panel><h3>偏好分类 Top</h3>${o.categories.map(c=>`<div class=hbar><span class=nm>${esc(c.title||'')}</span><span class=tk><i style="width:${(c.seconds/cmax*100).toFixed(0)}%"></i></span><span class=vv>${fmtHours(c.seconds)}h</span></div>`).join('')}</div>`;
- const auth=`<div class=panel><h3>常读作者 Top</h3>${o.authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`;
+ const auth=`<div class=panel><h3>常读作者 Top · 按阅读时长</h3>${o.authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`;
  const sd=d.sessions||{distribution:[],total:0},smax=Math.max(1,...sd.distribution.map(x=>x.count));
- const sess=`<div class=panel><h3>单次阅读时长分布 · 据划线时间推断，共 ${sd.total} 次</h3>${sd.distribution.map(x=>`<div class=hbar><span class=nm>${esc(x.label)}</span><span class=tk><i style="width:${(x.count/smax*100).toFixed(0)}%"></i></span><span class=vv>${x.count} 次</span></div>`).join('')}<div style='font-size:11px;color:var(--muted);margin-top:10px'>同一时段连续划线视为一次阅读，跨度即时长；纯阅读未划线的部分无法计入，仅供参考“碎片 vs 整片”的倾向。</div></div>`;
- const bm=(d.byMonth||[]);
- const mc=`<div class=panel><h3>按月阅读时长（今年）</h3>${bm.length?barChart(bm.map(m=>({label:m.label+'月',tick:m.label,value:m.seconds})),{h:120}):'<div class=note-empty>暂无</div>'}</div>`;
+ const sess=`<div class=panel><h3>单次阅读时长分布</h3>${sd.verdict?`<div class=verdict>${esc(sd.verdict)}</div>`:''}${sd.distribution.map(x=>`<div class=hbar><span class=nm>${esc(x.label)}</span><span class=tk><i style="width:${(x.count/smax*100).toFixed(0)}%"></i></span><span class=vv>${x.count} 次</span></div>`).join('')}<div style='font-size:11px;color:var(--muted);margin-top:10px'>据划线时间推断的阅读会话（共 ${sd.total} 次）；纯阅读未划线的部分不计入，仅供参考。</div></div>`;
+ const charts={monthly:(d.byDayMonth&&d.byDayMonth.length)?`<div class=panel><h3>本月每日时长</h3>${barChart(d.byDayMonth.map(x=>({label:x.label,tick:x.label.slice(3),value:x.seconds})),{h:130})}</div>`:'',
+  annually:(d.byMonth&&d.byMonth.length)?`<div class=panel><h3>本年每月时长</h3>${barChart(d.byMonth.map(m=>({label:m.label+'月',tick:m.label,value:m.seconds})),{h:130})}</div>`:'',
+  overall:(o.byYear&&o.byYear.length)?`<div class=panel><h3>按年阅读时长</h3>${barChart(o.byYear.map(y=>({label:y.label,tick:y.label,value:y.seconds})),{h:130})}</div>`:'',weekly:''};
  const heat=d.heatmap||{};const years=[...new Set(Object.keys(heat).map(k=>k.slice(0,4)))].sort().reverse();
  const curY=years[0]||String(new Date().getFullYear());
  const ysel=years.map(y=>`<option value=${y}${y===curY?' selected':''}>${y}</option>`).join('');
  const hm=`<div class=panel><h3>划线热力图 <select id=hm-year class=hmsel>${ysel}</select> · 每日划线活跃度</h3><div id=hm-wrap style='overflow-x:auto'>${heatmapSVG(heat,+curY)}</div><div style='font-size:11px;color:var(--muted);margin-top:8px'>按划线时间统计的每日活跃度（近似阅读活跃，非阅读时长）。颜色越深当天划线越多。</div></div>`;
- sec.className='';sec.innerHTML=head+`<div style='margin-top:14px'>${hm}</div><div class=stats-grid>${yc}${mc}</div><div class=stats-grid>${hc}${sess}</div><div class=stats-grid>${cats}${auth}</div>`;
+ const PMAP=[['weekly','本周'],['monthly','本月'],['annually','今年'],['overall','全部']];
+ const avail=PMAP.filter(([k])=>d.periods&&d.periods[k]);
+ let curP=(avail.find(([k])=>k==='overall')||avail[0]||['overall'])[0];
+ const pseg=`<div class=seg id=pseg>${avail.map(([k,l])=>`<button data-p='${k}' type=button class='${k===curP?'on':''}'>${l}</button>`).join('')}</div>`;
+ sec.className='';sec.innerHTML=`<div class=pbar>${pseg}</div><div id=pblock></div><div style='margin-top:14px'>${hm}</div><div class=stats-grid>${hc}${sess}</div><div style='margin-top:14px'>${auth}</div>`;
+ const fillP=()=>{e('pblock').innerHTML=renderPeriod(d.periods[curP],curP,charts)};
+ document.querySelectorAll('#pseg button').forEach(btn=>btn.onclick=()=>{curP=btn.dataset.p;document.querySelectorAll('#pseg button').forEach(x=>x.classList.toggle('on',x===btn));fillP()});
+ fillP();
  const hy=e('hm-year');if(hy)hy.onchange=()=>{e('hm-wrap').innerHTML=heatmapSVG(heat,+hy.value)};}
 loadSettings();load();loadStats();</script></body></html>""".encode("utf-8")
 
@@ -609,13 +670,17 @@ def make_handler(db_path: Path):
                                 author = (row["author"] if row else "") or ""
                             related = []
                             if author:
+                                norm = lambda s: "".join(ch for ch in (s or "") if ch.isalnum())
+                                target = norm(author)
                                 data = Gateway().call("/store/search", keyword=author, count=20)
                                 seen = {book_id}
                                 for tab in data.get("results", []):
                                     for entry in (tab.get("books") or []):
                                         info = entry.get("bookInfo") or {}
                                         bid = info.get("bookId")
-                                        if bid and bid not in seen and (info.get("author") or "") == author:
+                                        other = norm(info.get("author"))
+                                        matched = target and (target == other or (len(target) >= 2 and (target in other or other in target)))
+                                        if bid and bid not in seen and matched:
                                             seen.add(bid)
                                             related.append({
                                                 "book_id": bid, "title": info.get("title"), "author": info.get("author"),

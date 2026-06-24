@@ -177,7 +177,7 @@ class SyncService:
             info.get("finished"), item.get("sort"), now, str(book_id),
         )
         updated = self.conn.execute(
-            """UPDATE books SET title=?,author=?,cover=?,intro=?,category=?,publish_time=?,review_count=?,
+            """UPDATE books SET title=?,author=?,cover=?,intro=COALESCE(NULLIF(?,''),intro),category=?,publish_time=?,review_count=?,
             note_count=?,bookmark_count=?,total_notes=?,reading_progress=?,marked_status=?,finished=?,sort=?,synced_at=?
             WHERE book_id=?""",
             values,
