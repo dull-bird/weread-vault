@@ -51,6 +51,17 @@ weread-vault serve --open          # 打开 http://127.0.0.1:8765/
 
 漏了 submodule 就补：`git submodule update --init --recursive`。
 
+## 桌面安装包与升级
+
+不想碰命令行？到 **[Releases](https://github.com/dull-bird/weread-vault/releases/latest)** 下载对应平台的单文件程序（macOS / Windows），双击即启动本地 Dashboard 并自动打开浏览器，在网页里粘贴 API Key 同步即可。检查与获取更新：
+
+```bash
+weread-vault update             # 检查是否有新版本
+weread-vault update --download  # 下载对应平台的安装包到当前目录
+```
+
+> 安装包由 GitHub Actions 在打 `v*` tag 时用 PyInstaller 自动构建（见 `.github/workflows/release.yml`）。项目主页：<https://dull-bird.github.io/weread-vault/>。
+
 ## 阅读统计
 
 按本周 / 本月 / 今年 / 全部切换，所有数字随之更新；GitHub 式热力图展示每日划线活跃度（多年）。全部来自历史快照，随每次同步累积，能看到长期趋势。

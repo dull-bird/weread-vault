@@ -1,0 +1,55 @@
+name: release
+
+# Tag a release to build standalone binaries for macOS and Windows and attach them
+# to the GitHub Release: `git tag v0.2.0 && git push origin v0.2.0`.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: weread-vault-macos
+          - os: windows-latest
+            name: weread-vault-windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build standalone binary
+        run: pyinstaller --onefile --name ${{ matrix.name }} --collect-submodules weread_vault packaging/launch.py
+
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/${{ matrix.name }}
+            dist/${{ matrix.name }}.exe
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/${{ matrix.name }}*

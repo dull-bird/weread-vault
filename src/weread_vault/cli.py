@@ -7,6 +7,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
+from . import __version__
 from .config import DEFAULT_PORT, default_db_path
 from .db import connect, initialize, summary
 from .errors import WereadVaultError
@@ -23,6 +24,52 @@ def _path(value: str | None) -> Path:
 
 def _emit_json(obj: object) -> None:
     print(json.dumps(obj, ensure_ascii=False, indent=2))
+
+
+_RELEASES_API = "https://api.github.com/repos/dull-bird/weread-vault/releases/latest"
+
+
+def _version_tuple(value: str) -> tuple[int, ...]:
+    import re
+    return tuple(int(part) for part in re.findall(r"\d+", value)) or (0,)
+
+
+def _check_update(download: bool = False) -> None:
+    import platform
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(
+        _RELEASES_API, headers={"Accept": "application/vnd.github+json", "User-Agent": "weread-vault"})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            print("还没有发布版本（仓库尚无 Release）。")
+            return
+        raise WereadVaultError(f"检查更新失败：{error}") from error
+    except Exception as error:  # noqa: BLE001 — network/JSON, surfaced as a friendly message
+        raise WereadVaultError(f"检查更新失败：{error}") from error
+    latest = (data.get("tag_name") or "").lstrip("v")
+    if not latest:
+        print("还没有发布版本。")
+        return
+    if _version_tuple(latest) <= _version_tuple(__version__):
+        print(f"已是最新版本（当前 {__version__}，最新 {latest}）。")
+        return
+    print(f"发现新版本 {latest}（当前 {__version__}）。")
+    system = platform.system().lower()
+    key = "macos" if system == "darwin" else "windows" if system.startswith("win") else "linux"
+    asset = next((a for a in (data.get("assets") or []) if key in (a.get("name") or "").lower()), None)
+    if asset and download:
+        urllib.request.urlretrieve(asset["browser_download_url"], asset["name"])
+        print(f"已下载安装包：{asset['name']}")
+    elif asset:
+        print(f"下载（{key}）：{asset['browser_download_url']}")
+        print("或重新运行：weread-vault update --download")
+    else:
+        print(f"发布页：{data.get('html_url')}")
 
 
 def _parse_kv(items: list[str]) -> dict[str, object]:
@@ -43,6 +90,7 @@ def _parse_kv(items: list[str]) -> dict[str, object]:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="weread-vault", description="本地优先的微信读书笔记库")
+    result.add_argument("--version", action="version", version=f"weread-vault {__version__}")
     result.add_argument("--db", help="SQLite 文件路径（默认：用户数据目录）")
     sub = result.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="创建本地 SQLite 数据库")
@@ -55,6 +103,8 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("status", help="显示本地库状态")
     reset = sub.add_parser("reset", help="清空本机阅读数据（换账号前用；不影响 API Key）")
     reset.add_argument("--yes", action="store_true", help="跳过确认直接清空")
+    update = sub.add_parser("update", help="检查是否有新版本（GitHub Release）")
+    update.add_argument("--download", action="store_true", help="下载对应平台的安装包到当前目录")
     sub.add_parser("stats", help="输出阅读统计 JSON（供 AI 分析）")
     query = sub.add_parser("query", help="对本地库执行只读 SQL（供 AI 灵活分析）")
     query.add_argument("sql", nargs="?", help="SELECT / WITH 语句；省略则等同 --schema")
@@ -146,6 +196,8 @@ def main(argv: list[str] | None = None) -> None:
             print(f"同步完成：{count}")
         elif args.command == "status":
             _print_status(db_path)
+        elif args.command == "update":
+            _check_update(download=args.download)
         elif args.command == "reset":
             _require_db(db_path)
             if not args.yes:
