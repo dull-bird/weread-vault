@@ -51,6 +51,13 @@ weread-vault serve --open          # 打开 http://127.0.0.1:8765/
 
 漏了 submodule 就补：`git submodule update --init --recursive`。
 
+或者零安装直接跑（已发布到 PyPI 后）：
+
+```bash
+uvx weread-vault serve --open     # uv 的临时环境，免安装
+pipx install weread-vault         # 或常驻安装
+```
+
 ## 桌面安装包与升级
 
 不想碰命令行？到 **[Releases](https://github.com/dull-bird/weread-vault/releases/latest)** 下载对应平台的单文件程序（macOS / Windows），双击即启动本地 Dashboard 并自动打开浏览器，在网页里粘贴 API Key 同步即可。检查与获取更新：
