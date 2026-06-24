@@ -558,19 +558,19 @@ function barChart(data,opts){opts=opts||{};const W=opts.w||520,H=opts.h||140,pad
   return `<rect x='${x.toFixed(1)}' y='${y.toFixed(1)}' width='${bw.toFixed(1)}' height='${Math.max(bh,1).toFixed(1)}' rx='3' fill='var(--brand)'><title>${esc(String(d.label||''))} ${fmtHours(d.value)}h</title></rect>`+(d.tick!==''?`<text x='${(x+bw/2).toFixed(1)}' y='${H-5}' text-anchor='middle' class='caxis'>${esc(String(d.tick))}</text>`:'')}).join('');
  return `<svg viewBox='0 0 ${W} ${H}' class='chart' preserveAspectRatio='xMidYMid meet'>${bars}</svg>`}
 const MON=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-function heatmapSVG(heat,year){const C=11,G=3,L=22;const first=new Date(year,0,1),fd=first.getDay(),last=new Date(year,11,31);
+function heatmapSVG(heat,year){const C=11,G=3,L=26,T=18;const first=new Date(year,0,1),fd=first.getDay(),last=new Date(year,11,31);
  let max=1;for(let t=new Date(first);t<=last;t.setDate(t.getDate()+1)){const ds=`${year}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;if((heat[ds]||0)>max)max=heat[ds];}
  let rects='',monlbl='',lastMon=-1,idx=0;
  for(let t=new Date(first);t<=last;t.setDate(t.getDate()+1)){const m=t.getMonth(),ds=`${year}-${String(m+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
-  const c=heat[ds]||0,dow=t.getDay(),week=Math.floor((idx+fd)/7),x=L+week*(C+G),y=dow*(C+G);
+  const c=heat[ds]||0,dow=t.getDay(),week=Math.floor((idx+fd)/7),x=L+week*(C+G),y=T+dow*(C+G);
   const lv=c===0?0:c<=2?1:c<=5?2:c<=10?3:4,op=[0,25,45,70,100][lv];
   const fill=lv===0?'var(--line)':`color-mix(in srgb,var(--brand) ${op}%,var(--line))`;
-  rects+=`<rect x=${x} y=${y} width=${C} height=${C} rx=2 fill="${fill}"><title>${ds}：${c} 条划线</title></rect>`;
-  if(t.getDate()<=7&&m!==lastMon){lastMon=m;monlbl+=`<text x=${x} y=8 class=hmlbl>${MON[m]}</text>`;}
+  rects+=`<rect x='${x}' y='${y}' width='${C}' height='${C}' rx='2' fill="${fill}"><title>${ds}：${c} 条划线</title></rect>`;
+  if(t.getDate()<=7&&m!==lastMon){lastMon=m;monlbl+=`<text x='${x}' y='11' class='hmlbl'>${MON[m]}</text>`;}
   idx++;}
- const weeks=Math.ceil((idx+fd)/7),W=L+weeks*(C+G),H=14+7*(C+G);
- const wl=['一','三','五'].map((l,i)=>`<text x=0 y=${(i*2+1)*(C+G)+C+12} class=hmlbl>${l}</text>`).join('');
- return `<svg viewBox='0 0 ${W} ${H}' style='width:100%;max-width:${W}px;height:auto'><g transform='translate(0,12)'>${monlbl}${wl}${rects}</g></svg>`}
+ const weeks=Math.ceil((idx+fd)/7),W=L+weeks*(C+G),H=T+7*(C+G);
+ const wl=[1,3,5].map(dow=>`<text x='0' y='${T+dow*(C+G)+9}' class='hmlbl'>${['','一','','三','','五'][dow]}</text>`).join('');
+ return `<svg viewBox='0 0 ${W} ${H}' style='width:100%;max-width:${W}px;height:auto'>${monlbl}${wl}${rects}</svg>`}
 document.querySelectorAll('.nav button').forEach(b=>{const k={shelf:'book',stats:'stats',search:'search',sync:'sync'}[b.dataset.view];if(k)b.insertAdjacentHTML('afterbegin',ICO[k]);b.onclick=()=>{const v=b.dataset.view;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('.view').forEach(s=>{s.hidden=s.dataset.view!==v})}});
 function fmtDur2(s){s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${m}m`:`${m}m`}
 function renderPeriod(p,key,charts){if(!p)return'<div class=note-empty>该周期暂无数据。</div>';
