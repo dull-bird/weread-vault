@@ -257,7 +257,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .ptoggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:6px 0 14px}
 .ptoggle button{background:var(--card);color:var(--muted);border:0;padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}
 .ptoggle button.on{background:var(--brand);color:#fff}
-.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;align-items:start}
 @media(max-width:620px){.stats-grid{grid-template-columns:1fr}}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:17px 19px;box-shadow:var(--shadow)}
 .panel h3{margin:0 0 13px;font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.01em}
@@ -460,7 +460,7 @@ async function runSync(mode){const btns=[e('sync-btn'),e('full-btn'),e('popular-
     if(o.done){result=o.counts;continue}
     if(o.line){msg.textContent=o.line;const m=o.line.match(/\[(\d+)\/(\d+)\]/);if(m&&+m[2]>0){prog.className='prog show';bar.style.width=Math.round(m[1]/m[2]*100)+'%'}}}}
   prog.className='prog show';bar.style.width='100%';
-  msg.className='msg ok';msg.textContent=mode==='popular'?`已同步 ${result?.popular??0} 本书的热门划线。导出加 --with-popular 即可合并。`:`同步完成：全书架 ${result?.shelf??0} 本，有笔记 ${result?.books??0} 本，更新笔记 ${result?.notes??0} 本，统计 +${result?.stats??0}`;
+  msg.className='msg ok';msg.textContent=mode==='popular'?`已同步 ${result?.popular??0} 本书的热门划线。导出加 --with-popular 即可合并。`:`同步完成：全书架 ${result?.shelf??0} 本（有笔记 ${result?.books??0} 本），本次更新笔记 ${result?.notes??0} 本，阅读统计已刷新。`;
   await load();await loadSettings();
  }catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}
  finally{btns.forEach((b,i)=>{b.disabled=false;b.textContent=labels[i]});setTimeout(()=>{e('prog').className='prog'},1000)}}
@@ -582,7 +582,8 @@ function renderPeriod(p,key,charts){if(!p)return'<div class=note-empty>该周期
  return head+(charts[key]||'')+((lead||cats)?`<div class=stats-grid>${lead}${cats}</div>`:'');}
 async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());const sec=e('stats');
  if(!d.hasData){sec.className='empty';sec.innerHTML='暂无统计数据，先到「同步设置」同步一次。';return}
- const o=d.overall;e('stats-word').textContent=o.preferCategoryWord||'';
+ const o=d.overall;
+ const PWORD={weekly:c=>`这周在读 ${c}`,monthly:c=>`这个月偏爱 ${c}`,annually:c=>`今年读得最多的是 ${c}`,overall:c=>`一直最常读 ${c}`};
  const hc=`<div class=panel><h3>时段分布 · ${esc(o.preferTimeWord||'')}</h3>${barChart((o.preferTime||[]).map((v,i)=>({label:i+'时',tick:i%6===0?i:'',value:v})),{h:120})}</div>`;
  const auth=`<div class=panel><h3>常读作者 Top · 按阅读时长</h3>${o.authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`;
  const sd=d.sessions||{distribution:[],total:0},smax=Math.max(1,...sd.distribution.map(x=>x.count));
@@ -598,8 +599,8 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  const avail=PMAP.filter(([k])=>d.periods&&d.periods[k]);
  let curP=(avail.find(([k])=>k==='overall')||avail[0]||['overall'])[0];
  const pseg=`<div class=seg id=pseg>${avail.map(([k,l])=>`<button data-p='${k}' type=button class='${k===curP?'on':''}'>${l}</button>`).join('')}</div>`;
- sec.className='';sec.innerHTML=`<div class=pbar>${pseg}</div><div id=pblock></div><div style='margin-top:14px'>${hm}</div><div class=stats-grid>${hc}${sess}</div><div style='margin-top:14px'>${auth}</div>`;
- const fillP=()=>{e('pblock').innerHTML=renderPeriod(d.periods[curP],curP,charts)};
+ sec.className='';sec.innerHTML=`<div class=pbar>${pseg}</div><div id=pblock></div><div style='margin-top:14px'>${hm}</div><div class=stats-grid>${hc}${sess}</div><div style='margin-top:14px'>${auth}</div><p style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>阅读时长、天数、偏好等来自微信读书的官方阅读快照，随每次同步累积，可能与书架本数不完全对应。书架数为全书架（含无笔记的书），公众号单独归在书架分类里。</p>`;
+ const fillP=()=>{e('pblock').innerHTML=renderPeriod(d.periods[curP],curP,charts);const top=((d.periods[curP]||{}).categories||[])[0];e('stats-word').textContent=top&&top.title?(PWORD[curP]||(c=>c))(top.title):''};
  document.querySelectorAll('#pseg button').forEach(btn=>btn.onclick=()=>{curP=btn.dataset.p;document.querySelectorAll('#pseg button').forEach(x=>x.classList.toggle('on',x===btn));fillP()});
  fillP();
  const hy=e('hm-year');if(hy)hy.onchange=()=>{e('hm-wrap').innerHTML=heatmapSVG(heat,+hy.value)};}

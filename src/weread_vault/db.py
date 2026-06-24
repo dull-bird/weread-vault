@@ -150,7 +150,7 @@ def summary(conn: sqlite3.Connection) -> dict[str, int | str | None]:
     values = dict(
         conn.execute(
             """SELECT
-              (SELECT count(*) FROM books) AS books,
+              (SELECT count(*) FROM books WHERE book_id NOT LIKE 'MP_%') AS books,
               (SELECT count(*) FROM highlights) AS highlights,
               (SELECT count(*) FROM thoughts) AS thoughts,
               (SELECT max(completed_at) FROM sync_runs WHERE status='success') AS last_success,
