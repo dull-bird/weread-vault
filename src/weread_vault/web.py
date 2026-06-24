@@ -238,6 +238,9 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
 .seg button{background:var(--card);color:var(--muted);border:0;padding:8px 14px;font:inherit;font-size:13px;cursor:pointer}
 .seg button.on{background:var(--brand);color:#fff}
+.ptoggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:6px 0 14px}
+.ptoggle button{background:var(--card);color:var(--muted);border:0;padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}
+.ptoggle button.on{background:var(--brand);color:#fff}
 .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
 @media(max-width:620px){.stats-grid{grid-template-columns:1fr}}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:17px 19px;box-shadow:var(--shadow)}
@@ -504,21 +507,22 @@ async function openBook(id,store){if(!id)return;modal.classList.add('show');docu
  e('sheet').innerHTML=header+tabbar+`<div id=tabwrap></div>`;
  e('sheet').querySelector('.x').onclick=closeBook;
  const bi=e('sheet').querySelector('.bkintro');if(bi)bi.onclick=()=>bi.classList.toggle('open');
- const cache={};
+ const cache={};let popOrder='doc';
  async function show(t){
   e('sheet').querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
   const wrap=e('tabwrap');
   if(t==='mine'){wrap.innerHTML=renderMine(mine);const c=e('copymd');if(c)c.onclick=()=>navigator.clipboard.writeText(toMarkdown(mine)).then(()=>{c.textContent='已复制 ✓';setTimeout(()=>c.textContent='复制 Markdown',1500)});return}
-  if(cache[t]){wrap.innerHTML=cache[t];return}
+  if(cache[t]&&t!=='popular'){wrap.innerHTML=cache[t];return}
   wrap.innerHTML='<div class=note-empty>加载中…</div>';
-  const qs=`/api/book-extra?book_id=${encodeURIComponent(id)}&kind=${t}`+(t==='similar'?`&author=${encodeURIComponent(b.author||'')}`:'');
+  const qs=`/api/book-extra?book_id=${encodeURIComponent(id)}&kind=${t}`+(t==='similar'?`&author=${encodeURIComponent(b.author||'')}`:'')+(t==='popular'?`&order=${popOrder}`:'');
   const data=await fetch(qs).then(r=>r.json());
   if(data.error){wrap.innerHTML=`<div class=note-empty>${esc(data.error)}</div>`;return}
   let html;
-  if(t==='popular'){const its=data.items||[];html='<div class=notes>'+(its.length?its.map(x=>`<div class=pop><div class=tx>${esc(x.markText||'')}</div><div class=ft><span>${esc(x.chapter||'')}</span><span>${x.count} 人划线 · <button class=cp type=button title=复制>${ICO.copy}</button></span></div></div>`).join(''):'<div class=note-empty>暂无热门划线。</div>')+'</div>'}
+  if(t==='popular'){const its=data.items||[];const tg=`<div class=ptoggle><button data-o=doc class='${popOrder==='doc'?'on':''}' type=button>原文顺序</button><button data-o=heat class='${popOrder==='heat'?'on':''}' type=button>按热度</button></div>`;html='<div class=notes>'+tg+(its.length?its.map(x=>`<div class=pop><div class=tx>${esc(x.markText||'')}</div><div class=ft><span>${esc(x.chapter||'')}</span><span>${x.count} 人划线 · <button class=cp type=button title=复制>${ICO.copy}</button></span></div></div>`).join(''):'<div class=note-empty>暂无热门划线。</div>')+'</div>'}
   else if(t==='reviews'){const rs=data.reviews||[];html='<div class=notes>'+(rs.length?rs.map(x=>`<div class=rv><div class=au><span>${esc(x.author||'匿名')} ${star(x.star)}</span><span>${x.likes} 赞</span></div><div class=tx>${esc(x.content||'')}</div><div class=ft><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`).join(''):'<div class=note-empty>暂无公开书评。</div>')+'</div>'}
   else{const bs=data.books||[];html='<div class=notes>'+(bs.length?`<div class=simhint>同作者「${esc(data.by||b.author||'')}」的其他书</div><div class=simgrid>`+bs.map(x=>`<div class=simbook data-id='${esc(x.book_id)}' data-title='${esc(x.title||'')}' data-author='${esc(x.author||'')}' data-cover='${esc(x.cover||'')}' data-url='${esc(x.weread_url||'')}'><div class=cover>${cover(x)}</div><div class=t>${esc(x.title||'')}</div></div>`).join('')+'</div>':'<div class=note-empty>没找到同作者的其他书。</div>')+'</div>'}
-  cache[t]=html;wrap.innerHTML=html;
+  if(t!=='popular')cache[t]=html;wrap.innerHTML=html;
+  if(t==='popular')wrap.querySelectorAll('.ptoggle button').forEach(tb=>tb.onclick=()=>{popOrder=tb.dataset.o;show('popular')});
  }
  e('sheet').querySelectorAll('.tabs button').forEach(btn=>btn.onclick=()=>show(btn.dataset.t));
  show(tabs[0]);
@@ -714,10 +718,19 @@ def make_handler(db_path: Path):
                         else:
                             data = Gateway().call("/book/bestbookmarks", bookId=book_id)
                             chapters = {c.get("chapterUid"): c.get("title") for c in (data.get("chapters") or [])}
+
+                            def _pos(entry: dict[str, object]) -> tuple[int, int]:
+                                head = str(entry.get("range") or "").split("-")[0]
+                                return (int(entry.get("chapterUid") or 0), int(head) if head.isdigit() else 0)
+
+                            order = query.get("order", ["doc"])[0]
+                            raw = [it for it in (data.get("items") or []) if it.get("markText")]
+                            raw.sort(key=_pos) if order == "doc" else raw.sort(
+                                key=lambda it: it.get("totalCount") or 0, reverse=True)
                             items = [
                                 {"markText": it.get("markText"), "count": it.get("totalCount") or 0,
                                  "chapter": chapters.get(it.get("chapterUid"))}
-                                for it in (data.get("items") or []) if it.get("markText")
+                                for it in raw
                             ]
                             _json(self, {"items": items})
                     except Exception as error:  # noqa: BLE001 — surfaced to the page
