@@ -60,7 +60,19 @@ pipx install weread-vault         # 或常驻安装
 
 ## 桌面安装包与升级
 
-不想碰命令行？到 **[Releases](https://github.com/dull-bird/weread-vault/releases/latest)** 下载对应平台的单文件程序（macOS / Windows），双击即启动本地 Dashboard 并自动打开浏览器，在网页里粘贴 API Key 同步即可。检查与获取更新：
+不想碰命令行？到 **[Releases](https://github.com/dull-bird/weread-vault/releases/latest)** 下载：
+
+- **macOS**：`weread-vault-macos.dmg` → 打开把 `WeRead Vault.app` 拖进「应用程序」，双击启动后自动打开浏览器。
+- **Windows**：`weread-vault-windows.exe`，双击即启动。
+- 终端用户也可下 `weread-vault-macos`（无后缀的 CLI 程序），跑 `sync` / `update` 等命令。
+
+> **关于系统安全提示**：这两个程序没有花钱做苹果/微软的官方签名公证，所以首次打开系统会拦一下——这是正常的，不是病毒。
+> - **macOS**：右键点 `WeRead Vault.app` →「打开」→ 再点「打开」（只需一次）；或终端跑 `xattr -dr com.apple.quarantine "/Applications/WeRead Vault.app"`。
+> - **Windows**：SmartScreen 弹窗点「更多信息」→「仍要运行」。
+>
+> 想彻底不弹警告，需要苹果开发者账号（$99/年）做公证、Windows 代码签名证书——属于发布者付费项，不是代码层面能去掉的。
+
+检查与获取更新：
 
 ```bash
 weread-vault update             # 检查是否有新版本
