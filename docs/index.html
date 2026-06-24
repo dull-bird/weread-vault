@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WeRead Vault — 本地优先的微信读书归档</title>
+<title>WeRead Vault — 微信读书的本地数据库</title>
 <meta name="description" content="微信读书的本地数据库，一个带 Agent Skill 的 CLI：把书架、划线、想法、阅读统计归档进本机 SQLite，可查询、可视化、可导出，AI 直接读。">
 <style>
 :root{--bg:#f6f7f9;--fg:#11161d;--muted:#69707b;--line:#e7e9ee;--card:#fff;--brand:#1556e0;--brand2:#7c3aed}
@@ -12,28 +12,44 @@
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
 a{color:var(--brand);text-decoration:none}
 .wrap{max-width:980px;margin:0 auto;padding:0 22px}
-header{text-align:center;padding:72px 22px 40px;background:radial-gradient(900px 380px at 50% -120px,color-mix(in srgb,var(--brand) 16%,transparent),transparent)}
+header{text-align:center;padding:70px 22px 32px;background:radial-gradient(900px 380px at 50% -120px,color-mix(in srgb,var(--brand) 16%,transparent),transparent)}
 .logo{font-size:34px;font-weight:800;letter-spacing:-.03em}.logo .d{color:var(--brand)}
-.tag{font-size:19px;color:var(--fg);max-width:680px;margin:18px auto 8px;font-weight:500}
-.sub{color:var(--muted);max-width:620px;margin:0 auto}
-.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:30px 0 8px}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:11px;font-weight:600;font-size:15px;border:1px solid var(--line)}
+.tag{font-size:20px;font-weight:600;max-width:680px;margin:18px auto 6px}
+.sub{color:var(--muted);max-width:600px;margin:0 auto}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:28px 0 6px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:11px;font-weight:600;font-size:15px;border:1px solid var(--line);cursor:pointer}
 .btn.primary{background:var(--brand);color:#fff;border-color:transparent}
 .btn.ghost{background:var(--card);color:var(--fg)}
-.note{color:var(--muted);font-size:13px;margin-top:10px}
-.shot{margin:36px auto 0;max-width:1000px}
+.note{color:var(--muted);font-size:13px;max-width:640px;margin:12px auto 0;line-height:1.7}
+.shot{margin:34px auto 0;max-width:1000px}
 .shot img{width:100%;border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px -16px #1b212833;display:block}
-.cap{text-align:center;color:var(--muted);font-size:13px;margin-top:10px}
-section{padding:54px 0}
-h2{font-size:24px;letter-spacing:-.02em;text-align:center;margin:0 0 28px}
+section{padding:50px 0}
+h2{font-size:24px;letter-spacing:-.02em;text-align:center;margin:0 0 8px}
+.h2sub{text-align:center;color:var(--muted);margin:0 0 26px;font-size:14px}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
 .feat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px}
 .feat .e{font-size:22px}.feat h3{margin:10px 0 6px;font-size:16px}.feat p{margin:0;color:var(--muted);font-size:14px}
-pre{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;overflow:auto;font-size:13.5px;line-height:1.7}
+pre{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;overflow:auto;font-size:14px;line-height:1.7;text-align:left}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-.split{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:center}
-@media(max-width:760px){.split{grid-template-columns:1fr}}
+.dl{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.steps{max-width:680px;margin:18px auto 0;color:var(--muted);font-size:14px;line-height:1.9}
+.steps b{color:var(--fg)}
+.one{max-width:560px;margin:22px auto 0}
+details{max-width:680px;margin:16px auto 0}
+summary{cursor:pointer;color:var(--brand);font-size:14px;text-align:center}
+/* carousel */
+.car{position:relative;max-width:880px;margin:0 auto}
+.frames{position:relative}
+.frames figure{margin:0;display:none}
+.frames figure.on{display:block}
+.frames img{width:100%;border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px -16px #1b212833;display:block;background:var(--card)}
+.frames figcaption{text-align:center;color:var(--muted);font-size:13px;margin-top:12px}
+.car .arr{position:absolute;top:42%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px -6px #1b212833}
+.car .prev{left:-8px}.car .next{right:-8px}
+.dots{display:flex;gap:8px;justify-content:center;margin-top:14px}
+.dots b{width:8px;height:8px;border-radius:50%;background:var(--line);cursor:pointer}
+.dots b.on{background:var(--brand);width:20px;border-radius:5px}
 footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 22px 60px;border-top:1px solid var(--line)}
 </style>
 </head>
@@ -44,61 +60,110 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 22px 60p
 <p class="tag">微信读书的本地数据库，一个带 Agent Skill 的 CLI。</p>
 <p class="sub">把书架、划线、想法、阅读统计归档进本机 SQLite —— 可查询、可视化、可导出，AI 直接读，数据不上传。</p>
 <div class="cta">
-<a class="btn primary" href="https://github.com/dull-bird/weread-vault">GitHub 仓库 ↗</a>
-<a class="btn ghost" href="https://github.com/dull-bird/weread-vault/releases/latest">下载安装包（Win / Mac）↓</a>
+<a class="btn primary" href="https://github.com/dull-bird/weread-vault/releases/latest/download/weread-vault-macos.dmg">下载 macOS</a>
+<a class="btn primary" href="https://github.com/dull-bird/weread-vault/releases/latest/download/weread-vault-windows.exe">下载 Windows</a>
+<a class="btn ghost" href="https://github.com/dull-bird/weread-vault">GitHub ↗</a>
 </div>
-<p class="note">个人数据归档工具，不是官方客户端。只同步你自己的数据。</p>
+<p class="note">个人数据归档工具，不是官方客户端，只同步你自己的数据。</p>
 </div>
-<div class="wrap shot">
-<img src="assets/dashboard.png" alt="WeRead Vault Dashboard">
-</div>
+<div class="wrap shot"><img src="assets/dashboard.png" alt="WeRead Vault Dashboard"></div>
 </header>
+
+<section style="padding-top:36px">
+<div class="wrap">
+<h2>安装与使用</h2>
+<p class="h2sub">下载即用，无需 git clone。</p>
+<div class="dl">
+<a class="btn primary" href="https://github.com/dull-bird/weread-vault/releases/latest/download/weread-vault-macos.dmg">下载 macOS (.dmg)</a>
+<a class="btn primary" href="https://github.com/dull-bird/weread-vault/releases/latest/download/weread-vault-windows.exe">下载 Windows (.exe)</a>
+</div>
+<div class="steps">
+<b>三步用起来：</b><br>
+1. <b>打开</b>：macOS 打开 dmg 把 App 拖进「应用程序」双击；Windows 双击 exe。<br>
+&nbsp;&nbsp;&nbsp;首次系统会提示未签名 —— macOS 右键 App →「打开」，Windows 点「更多信息 → 仍要运行」（一次即可）。<br>
+2. <b>同步</b>：启动后浏览器自动打开，在「同步设置」粘贴微信读书 API Key（<a href="https://weread.qq.com/r/weread-skills">从这里获取</a>），点「同步」。<br>
+3. <b>用</b>：浏览书架、看统计、搜索、导出到 Markdown / Obsidian / Notion。
+</div>
+<div class="one">
+<p class="h2sub" style="margin:0 0 8px">习惯命令行？一行启动（需 Python 3.10+）：</p>
+<pre><code>uvx weread-vault serve --open</code></pre>
+</div>
+<details>
+<summary>或者，把这段发给 AI agent 让它帮你装 ▾</summary>
+<pre><code>请用 pipx 安装并运行 WeRead Vault：
+pipx install weread-vault &amp;&amp; weread-vault serve --open
+打开网页后提醒我去 https://weread.qq.com/r/weread-skills 获取微信读书 API Key，
+我在网页里粘贴同步。数据只存我本机，别把 key 写进任何文件。</code></pre>
+</details>
+</div>
+</section>
+
+<section style="background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+<div class="wrap">
+<h2>它能做什么</h2>
+<p class="h2sub">&nbsp;</p>
+<div class="grid">
+<div class="feat"><div class="e">🔒</div><h3>本地优先</h3><p>数据只存本机一个 SQLite 文件，可备份、迁移、离线，永不上传；网页只监听 127.0.0.1。</p></div>
+<div class="feat"><div class="e">📚</div><h3>完整书架</h3><p>同步整个书架（800+ 本，含无笔记的书与公众号分组）。</p></div>
+<div class="feat"><div class="e">📊</div><h3>阅读统计</h3><p>周/月/年/全部切换、同比、读得最多、偏好分类、时段、GitHub 式热力图、碎片化结论。</p></div>
+<div class="feat"><div class="e">🔥</div><h3>不只是你自己</h3><p>看「大家都在划的句子」和公开书评，搜书城，看同作者的相关书。</p></div>
+<div class="feat"><div class="e">🤖</div><h3>AI 原生</h3><p>CLI 暴露整套微信读书 API + 只读 SQL + 统计 JSON，可交给 Claude Code / Codex / OpenClaw。</p></div>
+<div class="feat"><div class="e">📝</div><h3>导出到知识库</h3><p>Markdown（含封面、合并他人热门划线去重）、Obsidian、flomo、Notion。</p></div>
+</div>
+</div>
+</section>
 
 <section>
 <div class="wrap">
-<h2>它能做什么</h2>
-<div class="grid">
-<div class="feat"><div class="e">🔒</div><h3>本地优先</h3><p>数据只存本机一个 SQLite 文件，可备份、迁移、离线，永不上传；网页只监听 127.0.0.1。</p></div>
-<div class="feat"><div class="e">📚</div><h3>完整书架</h3><p>同步整个书架（800+ 本，含无笔记的书与公众号分组），不只是有笔记的那几百本。</p></div>
-<div class="feat"><div class="e">📊</div><h3>阅读统计看板</h3><p>周/月/年/全部切换、同比、读得最多、偏好分类、时段分布、GitHub 式划线热力图、碎片化结论。</p></div>
-<div class="feat"><div class="e">🔥</div><h3>不只是你自己</h3><p>看「大家都在划的句子」（含人数）和公开书评，搜书城，看同作者的相关书。</p></div>
-<div class="feat"><div class="e">🤖</div><h3>AI 原生</h3><p>CLI 暴露整套微信读书 API + 只读 SQL + 统计 JSON，可直接交给 Claude Code / Codex / OpenClaw；自带荐书 Skill。</p></div>
-<div class="feat"><div class="e">📝</div><h3>导出到知识库</h3><p>Markdown（含封面、可合并他人热门划线去重）、Obsidian、flomo、Notion。</p></div>
+<h2>书籍详情</h2>
+<p class="h2sub">我的笔记 · 热门划线 · 书评 · 相关推荐</p>
+<div class="car" data-name="detail">
+<div class="frames">
+<figure class="on"><img src="assets/detail-mine.png" alt="我的笔记"><figcaption>我的笔记 —— 按章节排列，进度/推荐用进度条，每条可一键复制</figcaption></figure>
+<figure><img src="assets/detail-popular.png" alt="热门划线"><figcaption>热门划线 —— 大家都在划的句子（含人数），可按原文顺序或热度</figcaption></figure>
+<figure><img src="assets/detail-reviews.png" alt="书评"><figcaption>书评 —— 这本书的公开点评</figcaption></figure>
+<figure><img src="assets/detail-similar.png" alt="相关推荐"><figcaption>相关推荐 —— 同作者的其他书，点开即看</figcaption></figure>
+</div>
+<button class="arr prev" aria-label="上一张">‹</button>
+<button class="arr next" aria-label="下一张">›</button>
+<div class="dots"></div>
 </div>
 </div>
 </section>
 
 <section style="background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
 <div class="wrap">
-<div class="split">
-<div>
-<h2 style="text-align:left">三步上手</h2>
-<pre><code># 需要 Python 3.10+，无第三方依赖
-git clone --recurse-submodules \
-  https://github.com/dull-bird/weread-vault.git
-cd weread-vault && pip install -e .
-
-weread-vault init
-export WEREAD_API_KEY='你的 key'
-weread-vault sync
-weread-vault serve --open</code></pre>
-<p class="note">或把安装说明发给 Claude Code / Codex / OpenClaw，让 agent 帮你装。</p>
+<h2>阅读统计</h2>
+<p class="h2sub">按周 / 月 / 年 / 全部切换，所有数字随之变化</p>
+<div class="car" data-name="stats">
+<div class="frames">
+<figure class="on"><img src="assets/stats-all.png" alt="全部"><figcaption>全部 —— 累计时长、读得最多、偏好分类</figcaption></figure>
+<figure><img src="assets/stats-year.png" alt="今年"><figcaption>今年 —— 每月时长、同比、本年排行</figcaption></figure>
+<figure><img src="assets/stats-month.png" alt="本月"><figcaption>本月 —— 每日时长、较上月增长、本月读得最多</figcaption></figure>
+<figure><img src="assets/stats-heatmap.png" alt="热力图"><figcaption>划线热力图 —— GitHub 式，每日活跃度，多年</figcaption></figure>
 </div>
-<div class="shot" style="margin:0"><img src="assets/reading-stats.png" alt="阅读统计"></div>
+<button class="arr prev" aria-label="上一张">‹</button>
+<button class="arr next" aria-label="下一张">›</button>
+<div class="dots"></div>
 </div>
-</div>
-</section>
-
-<section>
-<div class="wrap">
-<h2>书籍详情 · 我的笔记 / 热门划线 / 书评 / 相关推荐</h2>
-<div class="shot"><img src="assets/book-detail.png" alt="书籍详情"></div>
-<p class="cap">进度与推荐值用进度条体现差异，每条笔记一键复制，可跳转微信读书。</p>
 </div>
 </section>
 
 <footer>
 WeRead Vault · MIT License · <a href="https://github.com/dull-bird/weread-vault">github.com/dull-bird/weread-vault</a>
 </footer>
+
+<script>
+document.querySelectorAll('.car').forEach(car=>{
+  const figs=[...car.querySelectorAll('.frames figure')];
+  const dots=car.querySelector('.dots');
+  let i=0;
+  figs.forEach((_,n)=>{const b=document.createElement('b');if(n===0)b.className='on';b.onclick=()=>go(n);dots.appendChild(b);});
+  const ds=[...dots.children];
+  function go(n){i=(n+figs.length)%figs.length;figs.forEach((f,k)=>f.classList.toggle('on',k===i));ds.forEach((d,k)=>d.classList.toggle('on',k===i));}
+  car.querySelector('.prev').onclick=()=>go(i-1);
+  car.querySelector('.next').onclick=()=>go(i+1);
+});
+</script>
 </body>
 </html>
