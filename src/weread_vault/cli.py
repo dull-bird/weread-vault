@@ -52,6 +52,8 @@ def parser() -> argparse.ArgumentParser:
     sync.add_argument("--refresh", action="store_true", help="sync info 专用：重抓所有书的富信息（含简介），不只补缺")
     sync.add_argument("--limit", type=int, help="最多同步多少本笔记书；适合首次测试或分批同步")
     sub.add_parser("status", help="显示本地库状态")
+    reset = sub.add_parser("reset", help="清空本机阅读数据（换账号前用；不影响 API Key）")
+    reset.add_argument("--yes", action="store_true", help="跳过确认直接清空")
     sub.add_parser("stats", help="输出阅读统计 JSON（供 AI 分析）")
     query = sub.add_parser("query", help="对本地库执行只读 SQL（供 AI 灵活分析）")
     query.add_argument("sql", nargs="?", help="SELECT / WITH 语句；省略则等同 --schema")
@@ -139,6 +141,17 @@ def main(argv: list[str] | None = None) -> None:
             print(f"同步完成：{count}")
         elif args.command == "status":
             _print_status(db_path)
+        elif args.command == "reset":
+            _require_db(db_path)
+            if not args.yes:
+                print("将清空本地全部阅读数据（书目/划线/想法/统计/同步状态），不影响 API Key。"
+                      "确认请重跑：weread-vault reset --yes", file=sys.stderr)
+                raise SystemExit(1)
+            with connect(db_path) as conn:
+                for table in ("highlights", "thoughts", "reading_stats", "books", "sync_runs", "sync_state"):
+                    conn.execute(f"DELETE FROM {table}")
+                conn.commit()
+            print("已清空本地阅读数据。")
         elif args.command == "stats":
             _require_db(db_path)
             with connect(db_path) as conn:

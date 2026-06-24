@@ -229,6 +229,10 @@ section{margin-top:30px}h2{margin:0 0 18px;font-size:17px;font-weight:650;letter
 form{display:flex;gap:8px}input{flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font:inherit;color:var(--fg)}input:focus{outline:2px solid var(--brand);outline-offset:-1px;border-color:transparent}
 button{border:0;border-radius:10px;background:var(--brand);color:#fff;padding:11px 18px;font:inherit;font-weight:550;cursor:pointer;transition:filter .15s,transform .05s}button:hover{filter:brightness(1.07)}button:active{transform:translateY(.5px)}
 button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex;align-items:center;gap:10px;margin:-10px 0 26px;flex-wrap:wrap}.hint{color:var(--muted);font-size:13px}.msg{font-size:13px}.msg.ok{color:#059669}.msg.err{color:#dc2626}.keybox{display:none;align-items:center;gap:8px;flex-wrap:wrap;width:100%}.keybox input{max-width:380px}.ghost{background:transparent;color:var(--brand);border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line))}
+.dz{margin-top:32px;border:1px solid color-mix(in srgb,#dc2626 22%,var(--line));border-radius:var(--radius);padding:16px 18px}
+.dz h3{margin:0 0 8px;font-size:14px;font-weight:600}.dzhint{font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.65}.dzhint code{background:var(--bg);padding:1px 5px;border-radius:5px}
+.dzrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.danger{background:transparent;color:#dc2626;border:1px solid color-mix(in srgb,#dc2626 40%,var(--line))}.danger:hover{background:color-mix(in srgb,#dc2626 10%,transparent);filter:none}
 .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
 .toolbar select{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 11px;font:inherit;font-size:13px;color:var(--fg);cursor:pointer}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
@@ -363,6 +367,9 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <div class='actions'><button id='sync-btn' type='button'>同步</button><button id='full-btn' class='ghost' type='button'>完整重扫</button><span id='sync-msg' class='msg'></span><div id='keybox' class='keybox'><input id='api-key' type='password' autocomplete='off' placeholder='粘贴 WEREAD_API_KEY，仅保存到本机私有配置'><button id='save-key' class='ghost' type='button'>保存 API Key</button></div></div>
 <div id='prog' class='prog'><i></i></div>
 <p class='sub'>「同步」会先拉取全书架，再增量同步有变更的笔记，并追加阅读统计。首次可能较慢。API Key 仅保存到本机私有配置，不会上传。</p>
+<div class='dz'><h3>账号与数据</h3>
+<p class='dzhint'>本机无法识别微信读书账号，换账号前请先清空数据，避免与上一个账号的记录混在一起；也可以用 <code>--db</code> 为不同账号开独立数据库。</p>
+<div class='dzrow'><button id='change-key' class='ghost' type='button'>更换 / 清除 API Key</button><button id='reset-data' class='danger' type='button'>清空本地阅读数据</button><span id='dz-msg' class='msg'></span></div></div>
 </section>
 </main></div>
 <div id='modal' class='modal'><div class='sheet' id='sheet'></div></div>
@@ -418,6 +425,8 @@ e('cat-sel').onchange=ev=>{curCat=ev.target.value;shelfPage=1;renderShelf()};
 e('view-seg').querySelectorAll('button').forEach(b=>b.onclick=()=>{curView=b.dataset.v;shelfPage=1;e('view-seg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));renderShelf()});
 async function loadSettings(){let x=await fetch('/api/settings').then(r=>r.json()),box=e('keybox'),status=e('api-key-status');box.style.display=x.source==='none'?'flex':'none';if(x.source==='env'){status.textContent='API Key 已由环境变量 WEREAD_API_KEY 设置。'}else if(x.source==='config'){status.textContent='API Key 已保存到本机私有配置。'}else{status.textContent='未设置 API Key。同步前请设置；会默认保存到本机私有配置。'}}
 e('save-key').onclick=async()=>{const key=e('api-key').value.trim(),msg=e('sync-msg');if(!key){msg.className='msg err';msg.textContent='API Key 不能为空。';return}e('save-key').disabled=true;try{let res=await fetch('/api/settings/api-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key})});let body=await res.json();if(!res.ok)throw new Error(body.error||'保存失败');e('api-key').value='';msg.className='msg ok';msg.textContent='API Key 已保存到本机私有配置。';await loadSettings()}catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}finally{e('save-key').disabled=false}};
+e('change-key').onclick=async()=>{const m=e('dz-msg');try{await fetch('/api/settings/clear-key',{method:'POST'});m.className='msg ok';m.textContent='已清除 API Key，可在上方重新粘贴新的 Key。';await loadSettings()}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};
+e('reset-data').onclick=async()=>{if(!confirm('确定清空本机全部阅读数据？书目 / 划线 / 想法 / 统计都会删除（API Key 保留）。此操作不可撤销。'))return;const m=e('dz-msg');m.className='msg';m.textContent='清空中…';try{let r=await fetch('/api/reset',{method:'POST'});let bd=await r.json();if(!r.ok)throw new Error(bd.error||'失败');m.className='msg ok';m.textContent='已清空。重新同步即可拉取当前账号的数据。';await load();await loadStats();await loadSettings()}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};
 async function runSync(mode){const sbtn=e('sync-btn'),fbtn=e('full-btn'),msg=e('sync-msg'),prog=e('prog'),bar=prog.querySelector('i'),slabel=sbtn.textContent,flabel=fbtn.textContent;
  sbtn.disabled=fbtn.disabled=true;(mode==='full'?fbtn:sbtn).textContent='同步中…';
  msg.className='msg';msg.textContent='首次同步可能较慢，正在连接微信读书…';prog.className='prog show indet';bar.style.width='';
@@ -775,6 +784,21 @@ def make_handler(db_path: Path):
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path == "/api/sync/stream":
                 self._sync_stream()
+                return
+            if parsed.path == "/api/settings/clear-key":
+                from .config import clear_api_key
+                clear_api_key()
+                _json(self, {"status": "ok", "source": api_key_source()})
+                return
+            if parsed.path == "/api/reset":
+                try:
+                    with connect(db_path) as conn:
+                        for table in ("highlights", "thoughts", "reading_stats", "books", "sync_runs", "sync_state"):
+                            conn.execute(f"DELETE FROM {table}")
+                        conn.commit()
+                    _json(self, {"status": "ok"})
+                except sqlite3.Error as error:
+                    _json(self, {"error": str(error)}, HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
             if parsed.path == "/api/settings/api-key":
                 try:

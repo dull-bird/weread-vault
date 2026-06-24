@@ -69,3 +69,11 @@ def save_api_key(api_key: str, path: Path | None = None) -> Path:
     except OSError:
         pass
     return config_path
+
+
+def clear_api_key(path: Path | None = None) -> None:
+    config_path = path or default_config_path()
+    data = _read_config(config_path)
+    if data.pop("weread_api_key", None) is None:
+        return
+    config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
