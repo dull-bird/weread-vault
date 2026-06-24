@@ -39,15 +39,16 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 details{max-width:680px;margin:16px auto 0}
 summary{cursor:pointer;color:var(--brand);font-size:14px;text-align:center}
 /* carousel */
-.car{position:relative;max-width:880px;margin:0 auto}
-.frames{position:relative}
+.car{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;column-gap:12px;max-width:960px;margin:0 auto}
+.frames{grid-column:2;grid-row:1;min-width:0}
 .frames figure{margin:0;display:none}
 .frames figure.on{display:block}
 .frames img{width:100%;border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px -16px #1b212833;display:block;background:var(--card)}
 .frames figcaption{text-align:center;color:var(--muted);font-size:13px;margin-top:12px}
-.car .arr{position:absolute;top:42%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px -6px #1b212833}
-.car .prev{left:-8px}.car .next{right:-8px}
-.dots{display:flex;gap:8px;justify-content:center;margin-top:14px}
+.car .arr{grid-row:1;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px -6px #1b212833}
+.car .arr:hover{background:color-mix(in srgb,var(--brand) 8%,var(--card))}
+.car .prev{grid-column:1}.car .next{grid-column:3}
+.dots{grid-column:2;grid-row:2;display:flex;gap:8px;justify-content:center;margin-top:14px}
 .dots b{width:8px;height:8px;border-radius:50%;background:var(--line);cursor:pointer}
 .dots b.on{background:var(--brand);width:20px;border-radius:5px}
 footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 22px 60px;border-top:1px solid var(--line)}
@@ -72,21 +73,18 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 22px 60p
 <section style="padding-top:36px">
 <div class="wrap">
 <h2>安装与使用</h2>
-<p class="h2sub">下载即用，无需 git clone。</p>
-<div class="dl">
-<a class="btn primary" href="https://github.com/dull-bird/weread-vault/releases/latest/download/weread-vault-macos.dmg">下载 macOS (.dmg)</a>
-<a class="btn primary" href="https://github.com/dull-bird/weread-vault/releases/latest/download/weread-vault-windows.exe">下载 Windows (.exe)</a>
-</div>
+<p class="h2sub">下载即用，无需 git clone。点页面顶部的「下载」按钮选系统即可。</p>
 <div class="steps">
-<b>三步用起来：</b><br>
-1. <b>打开</b>：macOS 打开 dmg 把 App 拖进「应用程序」双击；Windows 双击 exe。<br>
-&nbsp;&nbsp;&nbsp;首次系统会提示未签名 —— macOS 右键 App →「打开」，Windows 点「更多信息 → 仍要运行」（一次即可）。<br>
-2. <b>同步</b>：启动后浏览器自动打开，在「同步设置」粘贴微信读书 API Key（<a href="https://weread.qq.com/r/weread-skills">从这里获取</a>），点「同步」。<br>
-3. <b>用</b>：浏览书架、看统计、搜索、导出到 Markdown / Obsidian / Notion。
+<b>① 桌面 App（双击就用，适合大多数人）</b><br>
+macOS 打开 dmg 把 <b>WeRead Vault.app</b> 拖进「应用程序」双击；Windows 双击 exe。<br>
+首次系统提示未签名 —— macOS 右键 App →「打开」，Windows 点「更多信息 → 仍要运行」（一次即可）。<br>
+启动后浏览器自动打开，在「同步设置」粘贴微信读书 API Key（<a href="https://weread.qq.com/r/weread-skills">从这里获取</a>）点「同步」，即可浏览书架、看统计、搜索、导出。
 </div>
 <div class="one">
-<p class="h2sub" style="margin:0 0 8px">习惯命令行？一行启动（需 Python 3.10+）：</p>
-<pre><code>uvx weread-vault serve --open</code></pre>
+<p class="h2sub" style="margin:0 0 8px"><b>② 命令行</b>（要在终端用 <code>weread-vault</code> 跑 sync / 导出 / update，需 Python 3.10+）</p>
+<pre><code>pipx install weread-vault      # 把 weread-vault 命令装上 PATH
+uvx weread-vault serve --open  # 或免安装、临时跑一次</code></pre>
+<p class="note">桌面 App 只是图形界面，<b>不会</b>往系统装 <code>weread-vault</code> 命令；想在终端用命令行，就用上面的 pipx / uvx。</p>
 </div>
 <details>
 <summary>或者，把这段发给 AI agent 让它帮你装 ▾</summary>
