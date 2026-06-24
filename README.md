@@ -1,6 +1,6 @@
 # WeRead Vault
 
-**把微信读书的书架、划线、想法和阅读统计，安全归档到你自己电脑上的一个 SQLite 文件，并用本地网页浏览、搜索、导出——数据不上传，AI 也能直接读。**
+**微信读书的本地数据库 —— 一个带 Agent Skill 的 CLI。** 把书架、划线、想法、阅读统计归档进本机 SQLite，可查询、可视化、可导出，AI 直接读，数据不上传。
 
 ![WeRead Vault Dashboard](docs/assets/dashboard.png)
 
