@@ -123,6 +123,39 @@ weread-vault stats                          # aggregate reading stats incl. over
 
 Use `weread-vault apis` first to discover endpoint names and parameters, then `weread-vault api <endpoint> key=value …` for anything without a named shortcut. Numeric values are sent as numbers; id-like params (`bookId`, `reviewId`) stay strings. The official Skill does not expose full book text, so original paragraphs around a highlight are not available — the closest signals are full-text search snippets and other readers' highlights on the same chapter.
 
+## 端到端示例：「这周读得最久的书是哪本？」
+
+展示一个 agent 从用户需求到答案的完整流程，重点是**选对工具**：
+
+1. **判断数据在哪。** 这是「按周 + 阅读时长 + 单本」。阅读**时长**不在 SQLite 表里（`books`/`highlights` 没有「每本书读了多久」），而在微信读书的阅读快照里——所以用 `weread-vault stats`，**不是** `query`。
+   （对照：「笔记最多的书」「评分最高的书」这类**目录/笔记**问题才用 `query` 查 `books` 表。）
+
+2. **CLI 输入：**
+
+   ```bash
+   weread-vault stats
+   ```
+
+3. **CLI 输出（JSON，节选相关部分）：**
+
+   ```json
+   {
+     "periods": {
+       "weekly": {
+         "totalReadTime": 939, "readDays": 3,
+         "longest": [ { "title": "财富的真相", "author": "李笑来", "readSeconds": 916 } ]
+       },
+       "monthly": { … }, "annually": { … }, "overall": { … }
+     }
+   }
+   ```
+
+4. **agent 读取** `periods.weekly.longest[0]`，把 `readSeconds` 916 换算成约 15 分钟。
+
+5. **回答用户：** 「你这周读得最久的是《财富的真相》（李笑来），约 15 分钟。」
+
+要点：周/月/年/全部分别在 `periods.weekly/monthly/annually/overall`，每个都带 `longest`（该周期读得最久的书）、`totalReadTime`、`readDays`、`categories`（偏好分类）、`readStat`。需要按书名/分类/笔记数等检索时再转 `weread-vault query --schema` 写 SQL。
+
 ## Export and backup
 
 ```bash
