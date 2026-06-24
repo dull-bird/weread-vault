@@ -12,6 +12,15 @@ from weread_vault import web
 from weread_vault.db import connect, initialize
 
 
+class NormAuthorTests(unittest.TestCase):
+    def test_strips_brackets_and_matches_by_equality(self):
+        n = web._norm_author
+        self.assertEqual(n("[日]斋藤康毅"), n("斋藤康毅"))
+        self.assertEqual(n("弗兰克·扬纳斯"), n("[美]弗兰克·扬纳斯"))
+        # a shorter name must NOT equal a different longer one (the 弗兰克扬 mis-match bug)
+        self.assertNotEqual(n("弗兰克扬"), n("[美]弗兰克·扬纳斯"))
+
+
 class WebTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

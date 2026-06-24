@@ -46,6 +46,22 @@ def _sync_counts(service: SyncService, mode: str) -> dict[str, int]:
     raise ValueError("未知同步模式。")
 
 
+def _norm_author(name: str | None) -> str:
+    """Normalize an author for comparison: drop bracketed country/language markers like
+    「[日]」「(美)」「【英】」and keep only the remaining letters/CJK (so 「[日]斋藤康毅」==「斋藤康毅」).
+    Used with strict equality — substring matching wrongly links 「弗兰克扬」to「弗兰克·扬纳斯」."""
+    out: list[str] = []
+    depth = 0
+    for char in name or "":
+        if char in "[【(（":
+            depth += 1
+        elif char in "]】)）":
+            depth = max(0, depth - 1)
+        elif depth == 0 and char.isalnum():
+            out.append(char)
+    return "".join(out)
+
+
 def weread_url(book_id: str) -> str:
     """WeRead web book-detail URL. Reproduces WeRead's published bookId→hash transform."""
     book_id = str(book_id)
@@ -684,16 +700,14 @@ def make_handler(db_path: Path):
                                 author = (row["author"] if row else "") or ""
                             related = []
                             if author:
-                                norm = lambda s: "".join(ch for ch in (s or "") if ch.isalnum())
-                                target = norm(author)
+                                target = _norm_author(author)
                                 data = Gateway().call("/store/search", keyword=author, count=20)
                                 seen = {book_id}
                                 for tab in data.get("results", []):
                                     for entry in (tab.get("books") or []):
                                         info = entry.get("bookInfo") or {}
                                         bid = info.get("bookId")
-                                        other = norm(info.get("author"))
-                                        matched = target and (target == other or (len(target) >= 2 and (target in other or other in target)))
+                                        matched = bool(target) and target == _norm_author(info.get("author"))
                                         if bid and bid not in seen and matched:
                                             seen.add(bid)
                                             related.append({
