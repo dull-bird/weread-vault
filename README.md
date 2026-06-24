@@ -9,77 +9,50 @@
 ## 特点
 
 - 🔒 **本地优先**：所有数据只存在本机一个 SQLite 文件里，可备份、可迁移、可离线，永远不上传；网页只监听 `127.0.0.1`。
-- 📚 **完整书架**：同步整个书架（800+ 本，含无笔记的书与公众号分组），不只是有笔记的那几百本。
+- 📚 **完整书架**：同步整个书架（含无笔记的书；公众号单独归类），不只是有笔记的那一部分。
 - 📊 **阅读统计看板**：纯 SVG 零依赖渲染——本周/本月/今年/全部切换、同比、读得最多排行、偏好分类、24 小时时段、GitHub 式划线热力图、单次时长分布（还给「碎片化严重」这样的结论）。
 - 🔥 **不只是你自己**：每本书能看「大家都在划的句子」（含人数、可按原文顺序）和公开书评；还能搜微信读书书城、看同作者的相关书。
 - 🤖 **AI 原生**：CLI 暴露整套微信读书 API + 只读 SQL 查询 + 已解析统计 JSON，可直接交给 Claude Code、Codex、OpenClaw 等 agent；自带荐书 Skill。
 - 📝 **导出到你的知识库**：Markdown（含封面、可合并他人热门划线并去重）、Obsidian、flomo、Notion。
 - 🧰 **零第三方依赖**：纯 Python 标准库 + SQLite，有 Python 就能跑。
 
-## 把这段发给 AI agent，它会帮你装好
+## 安装
 
-适用于 Claude Code、Codex、OpenClaw 等任意能执行本机命令的 agent：
+**最简单：下载安装包，无需 git clone。** 到 [Releases](https://github.com/dull-bird/weread-vault/releases/latest) 下载：
 
-```text
-请帮我安装并运行 WeRead Vault（本地优先的微信读书归档工具，数据只存本机 SQLite，不上传）：
-1. 克隆（务必带 submodule，需 Python 3.10+）：
-   git clone --recurse-submodules https://github.com/dull-bird/weread-vault
-2. 进入仓库后安装：python -m pip install -e .
-3. 初始化并自检：weread-vault init && weread-vault status
-4. 同步需要微信读书官方 Agent Skill 的 WEREAD_API_KEY。请提醒我自行到 https://weread.qq.com/r/weread-skills 获取，
-   并只让我在本地终端 export 或在网页里保存——不要把 key 贴进对话，也不要写进任何文件或提交到仓库。
-5. 设置好 key 后同步：weread-vault sync
-6. 打开本地网页浏览书架、划线、想法和阅读统计：weread-vault serve --open
-7. 如果我用 Obsidian：导出 Markdown（一书一文件、保留我已有的 frontmatter）：
-   weread-vault export markdown --out "<我的 Obsidian 库路径>/WeReadNotes"
-```
+- **macOS**：`weread-vault-macos.dmg` —— 打开后把 `WeRead Vault.app` 拖进「应用程序」，双击启动。
+- **Windows**：`weread-vault-windows.exe` —— 双击启动。
 
-如果你的 agent 支持 Skill，可安装本仓库的 [`skills/weread-vault-cli`](skills/weread-vault-cli/SKILL.md)，把「同步微信读书」「导出到 Obsidian」「打开 Dashboard」直接映射到安全的 CLI 操作。
+启动后浏览器自动打开，在「同步设置」粘贴微信读书 API Key（[从这里获取](https://weread.qq.com/r/weread-skills)），点「同步」即可。
 
-## 手动安装
+> 首次打开系统会提示「未签名」（没做付费签名公证，正常现象）：macOS 右键 App →「打开」→「打开」；Windows 点「更多信息」→「仍要运行」。一次即可。
 
-需要 Python 3.10+，无第三方依赖。API Key 从 [微信读书官方 Skill](https://weread.qq.com/r/weread-skills) 获取（可选安装）。
+**命令行**（需 Python 3.10+）：
 
 ```bash
-git clone --recurse-submodules https://github.com/dull-bird/weread-vault.git
-cd weread-vault && python -m pip install -e .
-weread-vault init
-export WEREAD_API_KEY='你的 key'   # 仅同步需要；查看本地数据不需要
-weread-vault sync                  # 拉取书架、笔记、统计
-weread-vault serve --open          # 打开 http://127.0.0.1:8765/
-```
-
-漏了 submodule 就补：`git submodule update --init --recursive`。
-
-或者零安装直接跑（已发布到 PyPI 后）：
-
-```bash
-uvx weread-vault serve --open     # uv 的临时环境，免安装
+uvx weread-vault serve --open     # 免安装，临时环境直接跑
 pipx install weread-vault         # 或常驻安装
 ```
 
-## 桌面安装包与升级
+**让 AI agent 帮你装**（Claude Code / Codex / OpenClaw 等）：
 
-不想碰命令行？到 **[Releases](https://github.com/dull-bird/weread-vault/releases/latest)** 下载：
-
-- **macOS**：`weread-vault-macos.dmg` → 打开把 `WeRead Vault.app` 拖进「应用程序」，双击启动后自动打开浏览器。
-- **Windows**：`weread-vault-windows.exe`，双击即启动。
-- 终端用户也可下 `weread-vault-macos`（无后缀的 CLI 程序），跑 `sync` / `update` 等命令。
-
-> **关于系统安全提示**：这两个程序没有花钱做苹果/微软的官方签名公证，所以首次打开系统会拦一下——这是正常的，不是病毒。
-> - **macOS**：右键点 `WeRead Vault.app` →「打开」→ 再点「打开」（只需一次）；或终端跑 `xattr -dr com.apple.quarantine "/Applications/WeRead Vault.app"`。
-> - **Windows**：SmartScreen 弹窗点「更多信息」→「仍要运行」。
->
-> 想彻底不弹警告，需要苹果开发者账号（$99/年）做公证、Windows 代码签名证书——属于发布者付费项，不是代码层面能去掉的。
-
-检查与获取更新：
-
-```bash
-weread-vault update             # 检查是否有新版本
-weread-vault update --download  # 下载对应平台的安装包到当前目录
+```text
+请用 pipx 安装并运行 WeRead Vault：pipx install weread-vault && weread-vault serve --open
+打开网页后提醒我去 https://weread.qq.com/r/weread-skills 获取微信读书 API Key 粘贴同步。
+数据只存我本机，别把 key 写进任何文件。
 ```
 
-> 安装包由 GitHub Actions 在打 `v*` tag 时用 PyInstaller 自动构建（见 `.github/workflows/release.yml`）。项目主页：<https://dull-bird.github.io/weread-vault/>。
+agent 若支持 Skill，可装本仓库的 [`skills/weread-vault-cli`](skills/weread-vault-cli/SKILL.md)。
+
+**从源码（开发或兜底）**：
+
+```bash
+git clone --recurse-submodules https://github.com/dull-bird/weread-vault.git
+cd weread-vault && pip install -e .
+weread-vault serve --open
+```
+
+**升级**：`weread-vault update` 检查新版，`weread-vault update --download` 下载安装包。安装包由 GitHub Actions 在打 `v*` tag 时自动构建。项目主页：<https://dull-bird.github.io/weread-vault/>。
 
 ## 阅读统计
 
