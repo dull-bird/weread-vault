@@ -26,6 +26,8 @@
 启动后浏览器自动打开，在「同步设置」粘贴微信读书 API Key（[从这里获取](https://weread.qq.com/r/weread-skills)），点「同步」即可。
 
 > 首次打开系统会提示「未签名」（没做付费签名公证，正常现象）：macOS 右键 App →「打开」→「打开」；Windows 点「更多信息」→「仍要运行」。一次即可。
+>
+> 想在终端也用 `weread-vault` 命令？macOS 用户可在 App 网页的「同步设置」里点「注册 weread-vault 命令」一键链接到 PATH（无需 sudo），或直接用下面的 pipx / uvx。
 
 **命令行**（需 Python 3.10+）：
 

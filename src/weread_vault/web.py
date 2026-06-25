@@ -3,7 +3,11 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import os
+import platform
+import shutil
 import sqlite3
+import sys
 import threading
 import time
 import urllib.parse
@@ -44,6 +48,56 @@ def _sync_counts(service: SyncService, mode: str) -> dict[str, int]:
     if mode == "full":
         return {"books": service.books(), "notes": service.notes(full=True), "stats": service.stats()}
     raise ValueError("未知同步模式。")
+
+
+def _cli_link_dir() -> Path:
+    """Where to put the `weread-vault` symlink: /usr/local/bin if writable (already on PATH),
+    otherwise ~/.local/bin (user-writable; we add it to the shell PATH)."""
+    usr = Path("/usr/local/bin")
+    if usr.exists() and os.access(usr, os.W_OK):
+        return usr
+    return Path.home() / ".local" / "bin"
+
+
+def cli_status() -> dict[str, object]:
+    frozen = bool(getattr(sys, "frozen", False))
+    link = _cli_link_dir() / "weread-vault"
+    installed = bool(shutil.which("weread-vault")) or link.is_symlink()
+    return {"frozen": frozen, "system": platform.system(), "installed": installed,
+            "supported": frozen and platform.system() == "Darwin"}
+
+
+def _ensure_path_on_shell() -> list[str]:
+    marker = "# WeRead Vault CLI"
+    block = f'\n{marker}\nexport PATH="$HOME/.local/bin:$PATH"\n'
+    changed: list[str] = []
+    for rc in (Path.home() / ".zshrc", Path.home() / ".bash_profile"):
+        try:
+            text = rc.read_text(encoding="utf-8") if rc.exists() else ""
+            if marker in text:
+                continue
+            with rc.open("a", encoding="utf-8") as handle:
+                handle.write(block)
+            changed.append(str(rc))
+        except OSError:
+            pass
+    return changed
+
+
+def install_cli() -> dict[str, object]:
+    """Symlink the running .app binary onto PATH so `weread-vault` works in the terminal."""
+    if not getattr(sys, "frozen", False):
+        raise ValueError("当前是源码 / pip 版，weread-vault 命令已经可用，无需安装。")
+    if platform.system() != "Darwin":
+        raise ValueError("一键注册暂仅支持 macOS；Windows 请把 exe 放进 PATH 目录，或用 pipx 安装。")
+    target_dir = _cli_link_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    link = target_dir / "weread-vault"
+    if link.is_symlink() or link.exists():
+        link.unlink()
+    link.symlink_to(Path(sys.executable))
+    rc_changed = [] if target_dir == Path("/usr/local/bin") else _ensure_path_on_shell()
+    return {"path": str(link), "rc_changed": rc_changed}
 
 
 def _norm_author(name: str | None) -> str:
@@ -245,7 +299,8 @@ section{margin-top:30px}h2{margin:0 0 18px;font-size:17px;font-weight:650;letter
 form{display:flex;gap:8px}input{flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font:inherit;color:var(--fg)}input:focus{outline:2px solid var(--brand);outline-offset:-1px;border-color:transparent}
 button{border:0;border-radius:10px;background:var(--brand);color:#fff;padding:11px 18px;font:inherit;font-weight:550;cursor:pointer;transition:filter .15s,transform .05s}button:hover{filter:brightness(1.07)}button:active{transform:translateY(.5px)}
 button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex;align-items:center;gap:10px;margin:-10px 0 26px;flex-wrap:wrap}.hint{color:var(--muted);font-size:13px}.msg{font-size:13px}.msg.ok{color:#059669}.msg.err{color:#dc2626}.keybox{display:none;align-items:center;gap:8px;flex-wrap:wrap;width:100%}.keybox input{max-width:380px}.ghost{background:transparent;color:var(--brand);border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line))}
-.dz{margin-top:32px;border:1px solid color-mix(in srgb,#dc2626 22%,var(--line));border-radius:var(--radius);padding:16px 18px}
+.clibox{margin-top:26px;border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}.clibox b{font-size:14px}.clibox code{background:var(--bg);padding:1px 5px;border-radius:5px}
+.dz{margin-top:24px;border:1px solid color-mix(in srgb,#dc2626 22%,var(--line));border-radius:var(--radius);padding:16px 18px}
 .dz h3{margin:0 0 8px;font-size:14px;font-weight:600}.dzhint{font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.65}.dzhint code{background:var(--bg);padding:1px 5px;border-radius:5px}
 .dzrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .danger{background:transparent;color:#dc2626;border:1px solid color-mix(in srgb,#dc2626 40%,var(--line))}.danger:hover{background:color-mix(in srgb,#dc2626 10%,transparent);filter:none}
@@ -386,6 +441,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <div class='actions'><button id='sync-btn' type='button'>同步</button><button id='full-btn' class='ghost' type='button'>完整重扫</button><button id='popular-btn' class='ghost' type='button' title='拉取他人热门划线，用于导出合并'>同步热门划线</button><span id='sync-msg' class='msg'></span><div id='keybox' class='keybox'><input id='api-key' type='password' autocomplete='off' placeholder='粘贴 WEREAD_API_KEY，仅保存到本机私有配置'><button id='save-key' class='ghost' type='button'>保存 API Key</button></div></div>
 <div id='prog' class='prog'><i></i></div>
 <p class='sub'>「同步」会先拉取全书架，再增量同步有变更的笔记，并追加阅读统计。首次可能较慢。API Key 仅保存到本机私有配置，不会上传。</p>
+<div id='cli-box'></div>
 <div class='dz'><h3>账号与数据</h3>
 <p class='dzhint'>本机无法识别微信读书账号，换账号前请先清空数据，避免与上一个账号的记录混在一起；也可以用 <code>--db</code> 为不同账号开独立数据库。</p>
 <div class='dzrow'><button id='change-key' class='ghost' type='button'>更换 / 清除 API Key</button><button id='reset-data' class='danger' type='button'>清空本地阅读数据</button><span id='dz-msg' class='msg'></span></div></div>
@@ -604,7 +660,13 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  document.querySelectorAll('#pseg button').forEach(btn=>btn.onclick=()=>{curP=btn.dataset.p;document.querySelectorAll('#pseg button').forEach(x=>x.classList.toggle('on',x===btn));fillP()});
  fillP();
  const hy=e('hm-year');if(hy)hy.onchange=()=>{e('hm-wrap').innerHTML=heatmapSVG(heat,+hy.value)};}
-loadSettings();load();loadStats();</script></body></html>""".encode("utf-8")
+async function loadCli(){const box=e('cli-box');let s;try{s=await fetch('/api/cli-status').then(r=>r.json())}catch(_){box.innerHTML='';return}
+ if(!s.frozen){box.innerHTML='';return}
+ if(s.installed){box.innerHTML="<div class=clibox><b>命令行已就绪 ✓</b><p class=dzhint>终端里可直接用 <code>weread-vault</code>（sync / 导出 / update 等）。如果提示找不到命令，打开一个新终端再试。</p></div>";return}
+ if(!s.supported){box.innerHTML="<div class=clibox><b>命令行</b><p class=dzhint>想在终端用 <code>weread-vault</code>：把本程序放进 PATH 目录，或 <code>pipx install weread-vault</code>。</p></div>";return}
+ box.innerHTML="<div class=clibox><b>把命令行装到终端</b><p class=dzhint>桌面 App 默认只是图形界面、不会注册命令行。点下面按钮，把 <code>weread-vault</code> 命令链接到系统 PATH（~/.local/bin 或 /usr/local/bin，无需 sudo），之后在终端就能跑 sync、导出、update。</p><div class=dzrow><button id='install-cli' class='ghost' type='button'>注册 weread-vault 命令</button><span id='cli-msg' class='msg'></span></div></div>";
+ e('install-cli').onclick=async()=>{const m=e('cli-msg');m.className='msg';m.textContent='安装中…';try{let r=await fetch('/api/install-cli',{method:'POST'});let b=await r.json();if(!r.ok)throw new Error(b.error||'失败');m.className='msg ok';m.textContent='已注册到 '+b.path+'。打开一个新终端即可用 weread-vault。';setTimeout(loadCli,1600)}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};}
+loadSettings();load();loadStats();loadCli();</script></body></html>""".encode("utf-8")
 
 
 def make_handler(db_path: Path):
@@ -638,6 +700,8 @@ def make_handler(db_path: Path):
                             "config_path": str(default_config_path()),
                         },
                     )
+                elif parsed.path == "/api/cli-status":
+                    _json(self, cli_status())
                 elif parsed.path == "/api/summary":
                     _json(self, summary(conn))
                 elif parsed.path == "/api/stats":
@@ -813,6 +877,14 @@ def make_handler(db_path: Path):
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path == "/api/sync/stream":
                 self._sync_stream()
+                return
+            if parsed.path == "/api/install-cli":
+                try:
+                    _json(self, {"status": "ok", **install_cli()})
+                except ValueError as error:
+                    _json(self, {"error": str(error)}, HTTPStatus.BAD_REQUEST)
+                except OSError as error:
+                    _json(self, {"error": str(error)}, HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
             if parsed.path == "/api/settings/clear-key":
                 from .config import clear_api_key
