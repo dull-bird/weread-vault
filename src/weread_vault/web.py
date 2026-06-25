@@ -298,7 +298,7 @@ h1{margin:0;font-size:27px;letter-spacing:-.02em;font-weight:700}.dot{color:var(
 section{margin-top:30px}h2{margin:0 0 18px;font-size:17px;font-weight:650;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}h2 .n{color:var(--muted);font-weight:450;font-size:13px}
 form{display:flex;gap:8px}input{flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font:inherit;color:var(--fg)}input:focus{outline:2px solid var(--brand);outline-offset:-1px;border-color:transparent}
 button{border:0;border-radius:10px;background:var(--brand);color:#fff;padding:11px 18px;font:inherit;font-weight:550;cursor:pointer;transition:filter .15s,transform .05s}button:hover{filter:brightness(1.07)}button:active{transform:translateY(.5px)}
-button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex;align-items:center;gap:10px;margin:-10px 0 26px;flex-wrap:wrap}.hint{color:var(--muted);font-size:13px}.msg{font-size:13px}.msg.ok{color:#059669}.msg.err{color:#dc2626}.keybox{display:none;align-items:center;gap:8px;flex-wrap:wrap;width:100%}.keybox input{max-width:380px}.ghost{background:transparent;color:var(--brand);border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line))}
+button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex;align-items:center;gap:10px;margin:-10px 0 26px;flex-wrap:wrap}.hint{color:var(--muted);font-size:13px}.msg{font-size:13px}.msg.ok{color:#059669}.msg.err{color:#dc2626}.msg.warn{color:#b45309;line-height:1.5}.keybox{display:none;align-items:center;gap:8px;flex-wrap:wrap;width:100%}.keybox input{max-width:380px}.ghost{background:transparent;color:var(--brand);border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line))}
 .clibox{margin-top:26px;border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}.clibox b{font-size:14px}.clibox code{background:var(--bg);padding:1px 5px;border-radius:5px}
 .dz{margin-top:24px;border:1px solid color-mix(in srgb,#dc2626 22%,var(--line));border-radius:var(--radius);padding:16px 18px}
 .dz h3{margin:0 0 8px;font-size:14px;font-weight:600}.dzhint{font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.65}.dzhint code{background:var(--bg);padding:1px 5px;border-radius:5px}
@@ -498,14 +498,18 @@ async function load(){
 e('sort-sel').onchange=ev=>{curSort=ev.target.value;shelfPage=1;renderShelf()};
 e('cat-sel').onchange=ev=>{curCat=ev.target.value;shelfPage=1;renderShelf()};
 e('view-seg').querySelectorAll('button').forEach(b=>b.onclick=()=>{curView=b.dataset.v;shelfPage=1;e('view-seg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));renderShelf()});
-async function loadSettings(){let x=await fetch('/api/settings').then(r=>r.json()),box=e('keybox'),status=e('api-key-status');box.style.display=x.source==='none'?'flex':'none';if(x.source==='env'){status.textContent='API Key 已由环境变量 WEREAD_API_KEY 设置。'}else if(x.source==='config'){status.textContent='API Key 已保存到本机私有配置。'}else{status.textContent='未设置 API Key。同步前请设置；会默认保存到本机私有配置。'}}
+async function loadSettings(){let x=await fetch('/api/settings').then(r=>r.json()),box=e('keybox'),status=e('api-key-status');box.style.display=x.source==='none'?'flex':'none';
+ let base=x.source==='env'?'API Key 已由环境变量设置。':x.source==='config'?'API Key 已保存到本机私有配置。':'未设置 API Key。同步前请设置。';
+ if(x.account)base+=` · 账号 #${x.account.slice(0,8)}`;
+ if(x.account&&x.archived&&x.archived!==x.account)base+='（⚠️ 与已归档账号不同）';
+ status.textContent=base;}
 e('save-key').onclick=async()=>{const key=e('api-key').value.trim(),msg=e('sync-msg');if(!key){msg.className='msg err';msg.textContent='API Key 不能为空。';return}e('save-key').disabled=true;try{let res=await fetch('/api/settings/api-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key})});let body=await res.json();if(!res.ok)throw new Error(body.error||'保存失败');e('api-key').value='';msg.className='msg ok';msg.textContent='API Key 已保存到本机私有配置。';await loadSettings()}catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}finally{e('save-key').disabled=false}};
 e('change-key').onclick=async()=>{const m=e('dz-msg');try{await fetch('/api/settings/clear-key',{method:'POST'});m.className='msg ok';m.textContent='已清除 API Key，可在上方重新粘贴新的 Key。';await loadSettings()}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};
 e('reset-data').onclick=async()=>{if(!confirm('确定清空本机全部阅读数据？书目 / 划线 / 想法 / 统计都会删除（API Key 保留）。此操作不可撤销。'))return;const m=e('dz-msg');m.className='msg';m.textContent='清空中…';try{let r=await fetch('/api/reset',{method:'POST'});let bd=await r.json();if(!r.ok)throw new Error(bd.error||'失败');m.className='msg ok';m.textContent='已清空。重新同步即可拉取当前账号的数据。';await load();await loadStats();await loadSettings()}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};
 async function runSync(mode){const btns=[e('sync-btn'),e('full-btn'),e('popular-btn')],labels=btns.map(b=>b.textContent),msg=e('sync-msg'),prog=e('prog'),bar=prog.querySelector('i');
  const active={sync:0,full:1,popular:2}[mode];btns.forEach(b=>b.disabled=true);btns[active].textContent='同步中…';
  msg.className='msg';msg.textContent=mode==='popular'?'正在拉取他人热门划线…':'首次同步可能较慢，正在连接微信读书…';prog.className='prog show indet';bar.style.width='';
- let result=null;
+ let result=null,warn='';
  try{
   const res=await fetch('/api/sync/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});
   if(!res.ok){let b=await res.json().catch(()=>({}));throw new Error(b.error||('HTTP '+res.status))}
@@ -513,10 +517,12 @@ async function runSync(mode){const btns=[e('sync-btn'),e('full-btn'),e('popular-
   for(;;){const{value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});let nl;
    while((nl=buf.indexOf('\n'))>=0){const line=buf.slice(0,nl).trim();buf=buf.slice(nl+1);if(!line)continue;let o;try{o=JSON.parse(line)}catch(_){continue}
     if(o.error)throw new Error(o.error);
+    if(o.warning){warn=o.warning;continue}
     if(o.done){result=o.counts;continue}
     if(o.line){msg.textContent=o.line;const m=o.line.match(/\[(\d+)\/(\d+)\]/);if(m&&+m[2]>0){prog.className='prog show';bar.style.width=Math.round(m[1]/m[2]*100)+'%'}}}}
   prog.className='prog show';bar.style.width='100%';
-  msg.className='msg ok';msg.textContent=mode==='popular'?`已同步 ${result?.popular??0} 本书的热门划线。导出加 --with-popular 即可合并。`:`同步完成：全书架 ${result?.shelf??0} 本（有笔记 ${result?.books??0} 本），本次更新笔记 ${result?.notes??0} 本，阅读统计已刷新。`;
+  if(warn){msg.className='msg warn';msg.textContent='⚠️ '+warn+'（已同步完成）';}
+  else{msg.className='msg ok';msg.textContent=mode==='popular'?`已同步 ${result?.popular??0} 本书的热门划线。导出加 --with-popular 即可合并。`:`同步完成：全书架 ${result?.shelf??0} 本（有笔记 ${result?.books??0} 本），本次更新笔记 ${result?.notes??0} 本，阅读统计已刷新。`;}
   await load();await loadSettings();
  }catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}
  finally{btns.forEach((b,i)=>{b.disabled=false;b.textContent=labels[i]});setTimeout(()=>{e('prog').className='prog'},1000)}}
@@ -691,6 +697,9 @@ def make_handler(db_path: Path):
                 if parsed.path == "/health":
                     _json(self, {"status": "ok"})
                 elif parsed.path == "/api/settings":
+                    from .config import read_api_key
+                    from .db import get_state
+                    from .sync import account_fingerprint
                     source = api_key_source()
                     _json(
                         self,
@@ -698,6 +707,8 @@ def make_handler(db_path: Path):
                             "api_key_configured": source != "none",
                             "source": source,
                             "config_path": str(default_config_path()),
+                            "account": account_fingerprint(read_api_key()),
+                            "archived": get_state(conn, "account_fp"),
                         },
                     )
                 elif parsed.path == "/api/cli-status":
@@ -962,6 +973,9 @@ def make_handler(db_path: Path):
             try:
                 with connect(db_path) as conn:
                     service = SyncService(conn, Gateway(), report=lambda message: emit({"line": message}))
+                    warning = service.account_warning()
+                    if warning:
+                        emit({"warning": warning})
                     if mode == "popular":
                         emit({"line": "正在同步他人热门划线（用于导出合并）…"})
                         counts = {"popular": service.popular()}

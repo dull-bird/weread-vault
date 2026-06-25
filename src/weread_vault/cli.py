@@ -177,6 +177,9 @@ def main(argv: list[str] | None = None) -> None:
             initialize(db_path)
             with connect(db_path) as conn:
                 service = SyncService(conn, Gateway())
+                warning = service.account_warning()
+                if warning:
+                    print(f"⚠️  {warning}", file=sys.stderr)
                 if args.limit is not None and args.limit < 1:
                     raise WereadVaultError("--limit 必须是正整数。")
                 if args.scope == "shelf":

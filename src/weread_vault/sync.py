@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import time
 from collections.abc import Callable
 from typing import Any
 
-from .db import set_state
+from .db import get_state, set_state
 from .gateway import Gateway
+
+
+def account_fingerprint(api_key: str | None) -> str:
+    """A short, irreversible id for the account behind an API key (the key itself is never stored)."""
+    return hashlib.sha256((api_key or "").encode("utf-8")).hexdigest()[:12] if api_key else ""
 
 Reporter = Callable[[str], None]
 
@@ -48,6 +54,23 @@ class SyncService:
         set_state(self.conn, f"{scope}_synced_at", str(int(time.time())))
         self.conn.commit()
         return count
+
+    def account_warning(self) -> str | None:
+        """Record the current account fingerprint; warn if it changed and an archive already exists.
+
+        Soft (non-blocking): regenerating the key for the *same* account also changes the
+        fingerprint, so this only nudges the user, it never refuses to sync.
+        """
+        fingerprint = account_fingerprint(self.gateway.api_key)
+        stored = get_state(self.conn, "account_fp")
+        has_data = self.conn.execute("SELECT count(*) FROM books").fetchone()[0] > 0
+        if fingerprint:
+            set_state(self.conn, "account_fp", fingerprint)
+            self.conn.commit()
+        if stored and fingerprint and stored != fingerprint and has_data:
+            return ("当前 API Key 与上次同步的不同。若换了微信读书账号，建议先「清空本地阅读数据」"
+                    "再同步，避免两个账号的记录混在一起；若只是给同一账号重新生成了 Key，忽略即可。")
+        return None
 
     def books(self) -> int:
         return self._run("books", self._sync_books)
