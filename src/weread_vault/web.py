@@ -523,7 +523,7 @@ async function runSync(mode){const btns=[e('sync-btn'),e('full-btn'),e('popular-
   prog.className='prog show';bar.style.width='100%';
   if(warn){msg.className='msg warn';msg.textContent='⚠️ '+warn+'（已同步完成）';}
   else{msg.className='msg ok';msg.textContent=mode==='popular'?`已同步 ${result?.popular??0} 本书的热门划线。导出加 --with-popular 即可合并。`:`同步完成：全书架 ${result?.shelf??0} 本（有笔记 ${result?.books??0} 本），本次更新笔记 ${result?.notes??0} 本，阅读统计已刷新。`;}
-  await load();await loadSettings();
+  await load();await loadStats();await loadSettings();
  }catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}
  finally{btns.forEach((b,i)=>{b.disabled=false;b.textContent=labels[i]});setTimeout(()=>{e('prog').className='prog'},1000)}}
 e('sync-btn').onclick=()=>runSync('sync');
