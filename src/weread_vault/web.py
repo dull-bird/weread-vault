@@ -315,6 +315,9 @@ form{display:flex;gap:8px}input{flex:1;background:var(--card);border:1px solid v
 button{border:0;border-radius:10px;background:var(--brand);color:#fff;padding:11px 18px;font:inherit;font-weight:550;cursor:pointer;transition:filter .15s,transform .05s}button:hover{filter:brightness(1.07)}button:active{transform:translateY(.5px)}
 button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex;align-items:center;gap:10px;margin:-10px 0 26px;flex-wrap:wrap}.hint{color:var(--muted);font-size:13px}.msg{font-size:13px}.msg.ok{color:#059669}.msg.err{color:#dc2626}.msg.warn{color:#b45309;line-height:1.5}.keybox{display:none;align-items:center;gap:8px;flex-wrap:wrap;width:100%}.keybox input{max-width:380px}.ghost{background:transparent;color:var(--brand);border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line))}
 .clibox{margin-top:26px;border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}.clibox b{font-size:14px}.clibox code{background:var(--bg);padding:1px 5px;border-radius:5px}
+.skillbox{margin-top:26px;border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}.skillbox h3{margin:0 0 8px;font-size:14px;font-weight:600}.skillbox code{background:var(--bg);padding:1px 5px;border-radius:5px;font-size:12px}.skillbox a{font-weight:500}
+.cprow{position:relative;margin:10px 0}.cprow pre{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin:0;overflow:auto;font-size:12.5px;line-height:1.6;white-space:pre-wrap}.cprow .copyp{position:absolute;top:8px;right:8px;font-size:12px;padding:4px 10px}
+.skd{margin-top:10px}.skd summary{cursor:pointer;color:var(--brand);font-size:13px}.skl{margin:8px 0 0;padding-left:20px;font-size:13px;color:var(--muted);line-height:1.9}
 .dz{margin-top:24px;border:1px solid color-mix(in srgb,#dc2626 22%,var(--line));border-radius:var(--radius);padding:16px 18px}
 .dz h3{margin:0 0 8px;font-size:14px;font-weight:600}.dzhint{font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.65}.dzhint code{background:var(--bg);padding:1px 5px;border-radius:5px}
 .dzrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -457,6 +460,27 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <div id='prog' class='prog'><i></i></div>
 <p class='sub'>「同步」会先拉取全书架，再增量同步有变更的笔记，并追加阅读统计。首次可能较慢。API Key 仅保存到本机私有配置，不会上传。</p>
 <div id='cli-box'></div>
+<div class='skillbox'>
+<h3>接入 AI · 安装 Skill</h3>
+<p class='dzhint'>把 WeRead Vault 的 Skill 装进你的 AI agent（Claude Code / Codex / OpenClaw），就能用自然语言查阅读数据、按主题荐书、定时同步。把下面这段发给你的 agent：</p>
+<div class='cprow'><pre id='sk-install'>请安装并启用 WeRead Vault 的 Skill：
+1) 确保命令行可用：pipx install weread-vault（或我在用桌面 App，已点过「注册 weread-vault 命令」）
+2) 把 https://github.com/dull-bird/weread-vault 的 skills/weread-vault-cli/SKILL.md 装成你的 Skill
+3) 之后我问阅读相关问题时，用这个 Skill 调 weread-vault 命令回答。</pre><button class='ghost copyp' data-t='sk-install' type='button'>复制</button></div>
+<details class='skd'><summary>Skill 能帮你查什么</summary>
+<ul class='skl'>
+<li>「这周 / 本月 / 今年读得最久的书」→ <code>weread-vault stats</code></li>
+<li>「我评分最高 / 笔记最多 / 某分类的书」→ <code>weread-vault query</code>（只读 SQL）</li>
+<li>「搜书城找关于 X 的书」→ <code>weread-vault search</code></li>
+<li>「这本书大家都在划什么 / 有哪些公开书评」→ <code>weread-vault book &lt;id&gt; popular/reviews</code></li>
+<li>「结合我的口味和联网，按主题给我荐书」→ 荐书 Skill <code>weread-recommend</code></li>
+</ul></details>
+<details class='skd'><summary>OpenClaw 定时同步提示词</summary>
+<div class='cprow'><pre id='sk-cron'>每天 07:00（Asia/Shanghai）在隔离会话里跑一次微信读书同步并导出到 Obsidian：
+先 weread-vault sync，成功后 weread-vault export markdown --out "我的 Obsidian 库路径/微信读书"。
+失败保留日志，不要打印 API Key。</pre><button class='ghost copyp' data-t='sk-cron' type='button'>复制</button></div></details>
+<p class='dzhint' style='margin-top:12px'>官方链接：<a href='https://weread.qq.com/r/weread-skills' target='_blank' rel='noopener'>微信读书官方 Skill（取 API Key）↗</a> · <a href='https://github.com/dull-bird/weread-vault/tree/main/skills' target='_blank' rel='noopener'>本仓库 Skill ↗</a></p>
+</div>
 <div class='dz'><h3>账号与数据</h3>
 <p class='dzhint'>本机无法识别微信读书账号，换账号前请先清空数据，避免与上一个账号的记录混在一起；也可以用 <code>--db</code> 为不同账号开独立数据库。</p>
 <div class='dzrow'><button id='change-key' class='ghost' type='button'>更换 / 清除 API Key</button><button id='reset-data' class='danger' type='button'>清空本地阅读数据</button><span id='dz-msg' class='msg'></span></div></div>
@@ -541,6 +565,7 @@ async function runSync(mode){const btns=[e('sync-btn'),e('full-btn'),e('popular-
   await load();await loadStats();await loadSettings();
  }catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}
  finally{btns.forEach((b,i)=>{b.disabled=false;b.textContent=labels[i]});setTimeout(()=>{e('prog').className='prog'},1000)}}
+document.addEventListener('click',ev=>{const b=ev.target.closest('.copyp');if(!b)return;const pre=e(b.dataset.t);if(!pre)return;navigator.clipboard.writeText(pre.textContent).then(()=>{const o=b.textContent;b.textContent='已复制 ✓';setTimeout(()=>{b.textContent=o},1400)})});
 e('sync-btn').onclick=()=>runSync('sync');
 e('full-btn').onclick=()=>runSync('full');
 e('popular-btn').onclick=()=>runSync('popular');
