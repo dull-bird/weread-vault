@@ -139,13 +139,15 @@ def weread_url(book_id: str) -> str:
     return "https://weread.qq.com/web/bookDetail/" + result
 
 
-def _session_distribution(conn: sqlite3.Connection, gap: int = 1800) -> dict[str, object]:
+def _session_distribution(conn: sqlite3.Connection, gap: int = 1800, since: int = 0) -> dict[str, object]:
     """Infer reading sessions from highlight timestamps: a gap over `gap` seconds starts a new
     session; a session's span (first→last highlight) approximates its length. This is a proxy —
     pure reading without highlights is invisible — but it reveals fragmented vs. long-form reading.
+    ``since`` (unix seconds) limits to a period window so this can be computed per week/month/year.
     """
     times = [row[0] for row in conn.execute(
-        "SELECT create_time FROM highlights WHERE create_time IS NOT NULL ORDER BY create_time"
+        "SELECT create_time FROM highlights WHERE create_time IS NOT NULL AND create_time>=? ORDER BY create_time",
+        (since,),
     )]
     spans: list[int] = []
     if times:
@@ -163,7 +165,9 @@ def _session_distribution(conn: sqlite3.Connection, gap: int = 1800) -> dict[str
     short = sum(d["count"] for d in distribution[:2])   # ≤15 分钟
     long = sum(d["count"] for d in distribution[3:])    # ≥30 分钟
     short_share = short / total if total else 0
-    if short_share >= 0.7:
+    if total == 0:
+        verdict = "本周期没有划线记录，无法统计碎片化。"
+    elif short_share >= 0.7:
         verdict = f"碎片化严重 — {round(short_share * 100)}% 的阅读会话不足 15 分钟"
     elif short_share >= 0.5:
         verdict = f"偏碎片化 — 约半数（{round(short_share * 100)}%）会话短于 15 分钟"
@@ -239,9 +243,20 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
         "SELECT date(create_time,'unixepoch','+8 hours') AS d, count(*) AS c "
         "FROM highlights WHERE create_time IS NOT NULL GROUP BY d"
     )}
+    # Fragmentation per period (from highlight timestamps within each window).
+    now = int(time.time())
+    lt = time.localtime(now)
+    start_month = int(time.mktime((lt.tm_year, lt.tm_mon, 1, 0, 0, 0, 0, 0, -1)))
+    start_year = int(time.mktime((lt.tm_year, 1, 1, 0, 0, 0, 0, 0, -1)))
+    sessions = {
+        "weekly": _session_distribution(conn, since=now - 7 * 86400),
+        "monthly": _session_distribution(conn, since=start_month),
+        "annually": _session_distribution(conn, since=start_year),
+        "overall": _session_distribution(conn),
+    }
     return {
         "hasData": True,
-        "sessions": _session_distribution(conn),
+        "sessions": sessions,
         "periods": periods,
         "byMonth": by_month,
         "byDayMonth": by_day_month,
@@ -635,21 +650,24 @@ function heatmapSVG(heat,year){const C=11,G=3,L=26,T=18;const first=new Date(yea
  return `<svg viewBox='0 0 ${W} ${H}' style='width:100%;max-width:${W}px;height:auto'>${monlbl}${wl}${rects}</svg>`}
 document.querySelectorAll('.nav button').forEach(b=>{const k={shelf:'book',stats:'stats',search:'search',sync:'sync'}[b.dataset.view];if(k)b.insertAdjacentHTML('afterbegin',ICO[k]);b.onclick=()=>{const v=b.dataset.view;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('.view').forEach(s=>{s.hidden=s.dataset.view!==v})}});
 function fmtDur2(s){s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${m}m`:`${m}m`}
-function renderPeriod(p,key,charts){if(!p)return'<div class=note-empty>该周期暂无数据。</div>';
+function sessPanel(s){if(!s||!s.distribution)return'';
+ if(!s.total)return `<div class=panel><h3>单次阅读时长分布（碎片化）</h3><div class=note-empty style='padding:18px;text-align:left'>${esc(s.verdict||'本周期暂无数据。')}</div></div>`;
+ const mx=Math.max(1,...s.distribution.map(x=>x.count));
+ return `<div class=panel><h3>单次阅读时长分布（碎片化）</h3>${s.verdict?`<div class=verdict>${esc(s.verdict)}</div>`:''}${s.distribution.map(x=>`<div class=hbar><span class=nm>${esc(x.label)}</span><span class=tk><i style="width:${(x.count/mx*100).toFixed(0)}%"></i></span><span class=vv>${x.count} 次</span></div>`).join('')}<div style='font-size:11px;color:var(--muted);margin-top:10px'>据划线时间推断的阅读会话（${s.total} 次）；纯阅读未划线的部分不计入，仅供参考。</div></div>`;}
+function renderPeriod(p,key,charts,sessions){if(!p)return'<div class=note-empty>该周期暂无数据。</div>';
  const cmp=p.compare,cmpTxt=(cmp==null)?'':`<span class='cmp ${cmp>=0?'up':'down'}'>较上个周期 ${cmp>=0?'↑':'↓'} ${Math.abs(Math.round(cmp*100))}%</span>`;
  const head=`<div class=panel><div class=big><div><span class=v>${fmtDur2(p.totalReadTime)}</span> <span class=l>时长</span></div><div><span class=v>${p.readDays}</span> <span class=l>天</span></div><div><span class=v>${fmtDur2(p.dayAverage)}</span> <span class=l>日均</span></div>${cmpTxt}</div>${(p.readStat&&p.readStat.length)?`<div class=chips style=margin-top:12px>${p.readStat.map(s=>`<span class=chip>${esc(s.stat)} ${esc(s.counts)}</span>`).join('')}</div>`:''}</div>`;
  const lead=p.longest.length?`<div class=panel><h3>读得最多</h3>${p.longest.map((x,i)=>`<div class=lead><span class=rk>${i+1}</span><div class=li><div class=lt>${esc(x.title||'')}</div><div class=la>${esc(x.author||'')}</div></div><span class=lv>${fmtDur2(x.readSeconds)}</span></div>`).join('')}</div>`:'';
  const ccm=Math.max(1,...p.categories.map(c=>c.seconds||0));
  const cats=p.categories.length?`<div class=panel><h3>阅读偏好</h3>${p.categories.map(c=>`<div class=hbar><span class=nm>${esc(c.title||'')}</span><span class=tk><i style="width:${(c.seconds/ccm*100).toFixed(0)}%"></i></span><span class=vv>${c.count}本 · ${fmtDur2(c.seconds)}</span></div>`).join('')}</div>`:'';
- return head+(charts[key]||'')+((lead||cats)?`<div class=stats-grid>${lead}${cats}</div>`:'');}
+ const sp=sessPanel(sessions&&sessions[key]);
+ return head+(charts[key]||'')+((lead||cats)?`<div class=stats-grid>${lead}${cats}</div>`:'')+(sp?`<div style='margin-top:14px'>${sp}</div>`:'');}
 async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());const sec=e('stats');
  if(!d.hasData){sec.className='empty';sec.innerHTML='暂无统计数据，先到「同步设置」同步一次。';return}
  const o=d.overall;
  const PWORD={weekly:c=>`这周在读 ${c}`,monthly:c=>`这个月偏爱 ${c}`,annually:c=>`今年读得最多的是 ${c}`,overall:c=>`一直最常读 ${c}`};
- const hc=`<div class=panel><h3>时段分布 · ${esc(o.preferTimeWord||'')}</h3>${barChart((o.preferTime||[]).map((v,i)=>({label:i+'时',tick:i%6===0?i:'',value:v})),{h:120})}</div>`;
- const auth=`<div class=panel><h3>常读作者 Top · 按阅读时长</h3>${o.authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`;
- const sd=d.sessions||{distribution:[],total:0},smax=Math.max(1,...sd.distribution.map(x=>x.count));
- const sess=`<div class=panel><h3>单次阅读时长分布</h3>${sd.verdict?`<div class=verdict>${esc(sd.verdict)}</div>`:''}${sd.distribution.map(x=>`<div class=hbar><span class=nm>${esc(x.label)}</span><span class=tk><i style="width:${(x.count/smax*100).toFixed(0)}%"></i></span><span class=vv>${x.count} 次</span></div>`).join('')}<div style='font-size:11px;color:var(--muted);margin-top:10px'>据划线时间推断的阅读会话（共 ${sd.total} 次）；纯阅读未划线的部分不计入，仅供参考。</div></div>`;
+ const hc=`<div class=panel><h3>时段分布（总体）· ${esc(o.preferTimeWord||'')}</h3>${barChart((o.preferTime||[]).map((v,i)=>({label:i+'时',tick:i%6===0?i:'',value:v})),{h:120})}</div>`;
+ const auth=`<div class=panel><h3>常读作者 Top（总体）· 按阅读时长</h3>${o.authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`;
  const charts={monthly:(d.byDayMonth&&d.byDayMonth.length)?`<div class=panel><h3>本月每日时长</h3>${barChart(d.byDayMonth.map(x=>({label:x.label,tick:x.label.slice(3),value:x.seconds})),{h:130})}</div>`:'',
   annually:(d.byMonth&&d.byMonth.length)?`<div class=panel><h3>本年每月时长</h3>${barChart(d.byMonth.map(m=>({label:m.label+'月',tick:m.label,value:m.seconds})),{h:130})}</div>`:'',
   overall:(o.byYear&&o.byYear.length)?`<div class=panel><h3>按年阅读时长</h3>${barChart(o.byYear.map(y=>({label:y.label,tick:y.label,value:y.seconds})),{h:130})}</div>`:'',weekly:''};
@@ -661,8 +679,8 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  const avail=PMAP.filter(([k])=>d.periods&&d.periods[k]);
  let curP=(avail.find(([k])=>k==='overall')||avail[0]||['overall'])[0];
  const pseg=`<div class=seg id=pseg>${avail.map(([k,l])=>`<button data-p='${k}' type=button class='${k===curP?'on':''}'>${l}</button>`).join('')}</div>`;
- sec.className='';sec.innerHTML=`<div class=pbar>${pseg}</div><div id=pblock></div><div style='margin-top:14px'>${hm}</div><div class=stats-grid>${hc}${sess}</div><div style='margin-top:14px'>${auth}</div><p style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>阅读时长、天数、偏好等来自微信读书的官方阅读快照，随每次同步累积，可能与书架本数不完全对应。书架数为全书架（含无笔记的书），公众号单独归在书架分类里。</p>`;
- const fillP=()=>{e('pblock').innerHTML=renderPeriod(d.periods[curP],curP,charts);const top=((d.periods[curP]||{}).categories||[])[0];e('stats-word').textContent=top&&top.title?(PWORD[curP]||(c=>c))(top.title):''};
+ sec.className='';sec.innerHTML=`<div class=pbar>${pseg}</div><div id=pblock></div><div style='margin-top:14px'>${hm}</div><div class=stats-grid>${hc}${auth}</div><p style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>「时段分布」「常读作者」为总体口径（官方接口不提供分周期数据）；其余各项随上方周期切换。数据来自微信读书阅读快照，随每次同步累积，可能与书架本数不完全对应。</p>`;
+ const fillP=()=>{e('pblock').innerHTML=renderPeriod(d.periods[curP],curP,charts,d.sessions);const top=((d.periods[curP]||{}).categories||[])[0];e('stats-word').textContent=top&&top.title?(PWORD[curP]||(c=>c))(top.title):''};
  document.querySelectorAll('#pseg button').forEach(btn=>btn.onclick=()=>{curP=btn.dataset.p;document.querySelectorAll('#pseg button').forEach(x=>x.classList.toggle('on',x===btn));fillP()});
  fillP();
  const hy=e('hm-year');if(hy)hy.onchange=()=>{e('hm-wrap').innerHTML=heatmapSVG(heat,+hy.value)};}
