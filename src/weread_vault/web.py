@@ -330,7 +330,8 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .ptoggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:6px 0 14px}
 .ptoggle button{background:var(--card);color:var(--muted);border:0;padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}
 .ptoggle button.on{background:var(--brand);color:#fff}
-.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;align-items:start}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;align-items:stretch}
+.panel{display:flex;flex-direction:column}.panel>.chart{margin-top:auto;margin-bottom:auto}
 @media(max-width:620px){.stats-grid{grid-template-columns:1fr}}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:17px 19px;box-shadow:var(--shadow)}
 .panel h3{margin:0 0 13px;font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.01em}
@@ -691,7 +692,7 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  if(!d.hasData){sec.className='empty';sec.innerHTML='暂无统计数据，先到「同步设置」同步一次。';return}
  const o=d.overall;
  const PWORD={weekly:c=>`这周在读 ${c}`,monthly:c=>`这个月偏爱 ${c}`,annually:c=>`今年读得最多的是 ${c}`,overall:c=>`一直最常读 ${c}`};
- const hc=`<div class=panel><h3>时段分布（总体）· ${esc(o.preferTimeWord||'')}</h3>${barChart((o.preferTime||[]).map((v,i)=>({label:i+'时',tick:i%6===0?i:'',value:v})),{h:120})}</div>`;
+ const hc=`<div class=panel><h3>时段分布（总体）· ${esc(o.preferTimeWord||'')}</h3>${barChart((o.preferTime||[]).map((v,i)=>({label:i+'时',tick:i%6===0?i:'',value:v})),{h:150})}</div>`;
  const auth=`<div class=panel><h3>常读作者 Top（总体）· 按阅读时长</h3>${o.authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`;
  const charts={monthly:(d.byDayMonth&&d.byDayMonth.length)?`<div class=panel><h3>本月每日时长</h3>${barChart(d.byDayMonth.map(x=>({label:x.label,tick:x.label.slice(3),value:x.seconds})),{h:130})}</div>`:'',
   annually:(d.byMonth&&d.byMonth.length)?`<div class=panel><h3>本年每月时长</h3>${barChart(d.byMonth.map(m=>({label:m.label+'月',tick:m.label,value:m.seconds})),{h:130})}</div>`:'',

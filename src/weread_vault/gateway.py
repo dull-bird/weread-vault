@@ -17,7 +17,7 @@ from .errors import GatewayError, SkillUpgradeRequired
 class Gateway:
     """Small, dependency-free client for the WeRead Agent gateway."""
 
-    def __init__(self, api_key: str | None = None, sleep_seconds: float = 0.35):
+    def __init__(self, api_key: str | None = None, sleep_seconds: float = 0.15):
         self.api_key = api_key or read_api_key()
         self.sleep_seconds = sleep_seconds
 
