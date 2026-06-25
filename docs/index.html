@@ -15,7 +15,7 @@ a{color:var(--brand);text-decoration:none}
 header{text-align:center;padding:70px 22px 32px;background:radial-gradient(900px 380px at 50% -120px,color-mix(in srgb,var(--brand) 16%,transparent),transparent)}
 .logo{font-size:34px;font-weight:800;letter-spacing:-.03em}.logo .d{color:var(--brand)}
 .tag{font-size:20px;font-weight:600;max-width:680px;margin:18px auto 6px}
-.sub{color:var(--muted);max-width:600px;margin:0 auto}
+.sub{color:var(--muted);max-width:840px;margin:0 auto}
 .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:28px 0 6px}
 .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:11px;font-weight:600;font-size:15px;border:1px solid var(--line);cursor:pointer}
 .btn.primary{background:var(--brand);color:#fff;border-color:transparent}
@@ -38,6 +38,13 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .one{max-width:560px;margin:22px auto 0}
 details{max-width:680px;margin:16px auto 0}
 summary{cursor:pointer;color:var(--brand);font-size:14px;text-align:center}
+.ways{max-width:720px;margin:10px auto 0;text-align:left}
+.way{padding:20px 0;border-top:1px solid var(--line)}
+.way:first-child{border-top:0;padding-top:6px}
+.way h3{margin:0 0 8px;font-size:16px}
+.way p{margin:0;color:var(--muted);font-size:14px;line-height:1.75}
+.way pre{margin:10px 0 0}
+.way a{font-weight:500}
 /* carousel */
 .car{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;column-gap:12px;max-width:960px;margin:0 auto}
 .frames{grid-column:2;grid-row:1;min-width:0}
@@ -73,26 +80,28 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 22px 60p
 <section style="padding-top:36px">
 <div class="wrap">
 <h2>安装与使用</h2>
-<p class="h2sub">下载即用，无需 git clone。点页面顶部的「下载」按钮选系统即可。</p>
-<div class="steps">
-<b>① 桌面 App（双击就用，适合大多数人）</b><br>
-macOS 打开 dmg 把 <b>WeRead Vault.app</b> 拖进「应用程序」双击；Windows 双击 exe。<br>
-首次系统提示未签名 —— macOS 右键 App →「打开」，Windows 点「更多信息 → 仍要运行」（一次即可）。<br>
-启动后浏览器自动打开，在「同步设置」粘贴微信读书 API Key（<a href="https://weread.qq.com/r/weread-skills">从这里获取</a>）点「同步」，即可浏览书架、看统计、搜索、导出。
+<p class="h2sub">三种方式，从最省心到最灵活；每种都能顺带装上给 AI 用的 Skill。</p>
+<div class="ways">
+<div class="way">
+<h3>① 让 AI agent 自动装（最省心）</h3>
+<p>把下面这段发给 Claude Code / Codex / OpenClaw，它会装好命令行、启用 Skill 并打开 Dashboard：</p>
+<pre><code>请帮我装好 WeRead Vault 并启用它的 Skill：
+1) pipx install weread-vault
+2) 把 https://github.com/dull-bird/weread-vault 的 skills/weread-vault-cli 装成你的 Skill
+3) 跑 weread-vault serve --open，打开后提醒我去 https://weread.qq.com/r/weread-skills
+   取微信读书 API Key 粘贴同步。数据只存我本机，别把 key 写进任何文件。</code></pre>
 </div>
-<div class="one">
-<p class="h2sub" style="margin:0 0 8px"><b>② 命令行</b>（要在终端用 <code>weread-vault</code> 跑 sync / 导出 / update，需 Python 3.10+）</p>
-<pre><code>pipx install weread-vault      # 把 weread-vault 命令装上 PATH
-uvx weread-vault serve --open  # 或免安装、临时跑一次</code></pre>
-<p class="note">桌面 App 默认只是图形界面。想在终端用 <code>weread-vault</code>：要么在 App 网页的「同步设置」里点一下「<b>注册 weread-vault 命令</b>」一键搞定（macOS，无需 sudo），要么用上面的 pipx / uvx。</p>
+<div class="way">
+<h3>② 桌面 App + Skill（不想碰命令行）</h3>
+<p>点页面顶部「下载」：macOS 把 <b>WeRead Vault.app</b> 拖进「应用程序」双击，Windows 双击 exe（首次未签名 → macOS 右键 App「打开」/ Windows「更多信息→仍要运行」）。启动后在「同步设置」粘贴 <a href="https://weread.qq.com/r/weread-skills">API Key</a> 同步。想给 AI 用：在「同步设置」点「注册 weread-vault 命令」，并按页面的「安装 Skill」提示操作。</p>
 </div>
-<details>
-<summary>或者，把这段发给 AI agent 让它帮你装 ▾</summary>
-<pre><code>请用 pipx 安装并运行 WeRead Vault：
-pipx install weread-vault &amp;&amp; weread-vault serve --open
-打开网页后提醒我去 https://weread.qq.com/r/weread-skills 获取微信读书 API Key，
-我在网页里粘贴同步。数据只存我本机，别把 key 写进任何文件。</code></pre>
-</details>
+<div class="way">
+<h3>③ 命令行 + Skill（开发者）</h3>
+<pre><code>pipx install weread-vault        # 或 uvx weread-vault serve --open
+weread-vault serve --open</code></pre>
+<p>给 agent 用就再装 Skill：仓库的 <a href="https://github.com/dull-bird/weread-vault/tree/main/skills/weread-vault-cli">skills/weread-vault-cli</a>。</p>
+</div>
+</div>
 </div>
 </section>
 
