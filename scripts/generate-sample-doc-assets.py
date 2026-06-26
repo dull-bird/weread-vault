@@ -16,8 +16,10 @@ Run from the repository root:
 from __future__ import annotations
 
 import html
+import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -26,6 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "assets"
+SAMPLE_SQL = ROOT / "docs" / "sample-data" / "weread-vault-sample.sql"
 FONT = "Noto Sans CJK SC, Microsoft YaHei, Arial, sans-serif"
 
 BOOKS = [
@@ -71,6 +74,95 @@ SIMILAR = [
     ("笔记与边界", "林小满", "#be123c", "#fb7185"),
     ("每周读书实验", "林小满", "#334155", "#94a3b8"),
 ]
+
+STATS_LONGEST = [("星河笔记：在夜航中思考", 7400), ("慢读花园", 5200), ("清晨算法课", 3900), ("灯下的长期主义", 2600)]
+STATS_CATEGORIES = [("工具与效率", 15000), ("文学随笔", 9100), ("科学通识", 6300), ("心理成长", 4200)]
+STATS_AUTHORS = [("林小满", 9), ("周青禾", 6), ("陈亦舟", 4), ("顾南风", 3)]
+STATS_SESSIONS = [("≤5 分钟", 3), ("5-15 分钟", 6), ("15-30 分钟", 9), ("30-60 分钟", 5)]
+
+
+def load_sample_data(sql_path: Path = SAMPLE_SQL) -> None:
+    if not sql_path.exists():
+        raise SystemExit(f"Sample SQL not found: {sql_path}. Run scripts/create-sample-db.py --sql {sql_path}")
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.executescript(sql_path.read_text(encoding="utf-8"))
+        first_book = "sample-001"
+        global BOOKS, NOTES, POPULAR, REVIEWS, SIMILAR
+        global STATS_LONGEST, STATS_CATEGORIES, STATS_AUTHORS, STATS_SESSIONS
+
+        BOOKS = [
+            (
+                row["title"],
+                row["author"],
+                row["color1"],
+                row["color2"],
+                int(row["reading_progress"] or 0),
+                int(row["total_notes"] or 0),
+            )
+            for row in conn.execute(
+                """SELECT b.title,b.author,s.color1,s.color2,b.reading_progress,b.total_notes
+                FROM books b JOIN sample_book_styles s USING(book_id)
+                WHERE b.book_id < 'sample-100'
+                ORDER BY b.sort DESC
+                LIMIT 12"""
+            )
+        ]
+        NOTES = [
+            (row["chapter_title"], row["mark_text"], row["d"], int(row["color_style"] or 0))
+            for row in conn.execute(
+                """SELECT chapter_title,mark_text,date(create_time,'unixepoch') AS d,color_style
+                FROM highlights WHERE book_id=? ORDER BY chapter_uid, create_time""",
+                (first_book,),
+            )
+        ]
+        POPULAR = [
+            (row["chapter_title"], row["mark_text"], int(row["count"] or 0))
+            for row in conn.execute(
+                """SELECT chapter_title,mark_text,count
+                FROM popular_highlights WHERE book_id=? ORDER BY chapter_uid""",
+                (first_book,),
+            )
+        ]
+        REVIEWS = [
+            (row["author"], row["content"], int(row["stars"] or 0), int(row["likes"] or 0))
+            for row in conn.execute(
+                "SELECT author,content,stars,likes FROM sample_public_reviews WHERE book_id=? ORDER BY likes DESC",
+                (first_book,),
+            )
+        ]
+        author = conn.execute("SELECT author FROM books WHERE book_id=?", (first_book,)).fetchone()["author"]
+        SIMILAR = [
+            (row["title"], row["author"], row["color1"], row["color2"])
+            for row in conn.execute(
+                """SELECT b.title,b.author,s.color1,s.color2
+                FROM books b JOIN sample_book_styles s USING(book_id)
+                WHERE b.author=? AND b.book_id<>?
+                ORDER BY b.sort DESC
+                LIMIT 6""",
+                (author, first_book),
+            )
+        ]
+
+        payload_row = conn.execute("SELECT payload FROM reading_stats WHERE mode='overall' ORDER BY fetched_at DESC LIMIT 1").fetchone()
+        if payload_row:
+            payload = json.loads(payload_row["payload"])
+            STATS_LONGEST = [
+                ((item.get("book") or {}).get("title") or "", int(item.get("readTime") or 0))
+                for item in payload.get("readLongest", [])[:4]
+            ]
+            STATS_CATEGORIES = [
+                (item.get("categoryTitle") or "", int(item.get("readingTime") or 0))
+                for item in payload.get("preferCategory", [])[:4]
+            ]
+            STATS_AUTHORS = [
+                (item.get("name") or "", int(item.get("count") or 0))
+                for item in payload.get("preferAuthor", [])[:4]
+            ]
+    finally:
+        conn.close()
 
 
 def esc(value: object) -> str:
@@ -333,11 +425,11 @@ def stats(kind: str = "all") -> str:
     svg += rect(x0, 215, 560, 160, 18, "#fff", "#e7e9ee") + text(x0 + 34, 280, "42h 30m", 48, 800) + text(x0 + 34, 330, "累计阅读时长", 24, 400, "#69707b")
     svg += rect(x0 + 600, 215, 360, 160, 18, "#fff", "#e7e9ee") + text(x0 + 634, 280, "36", 48, 800) + text(x0 + 634, 330, "阅读天数", 24, 400, "#69707b")
     svg += rect(x0 + 1000, 215, 420, 160, 18, "#fff", "#e7e9ee") + text(x0 + 1034, 280, "1h 11m", 48, 800) + text(x0 + 1034, 330, "日均", 24, 400, "#69707b")
-    svg += panel_bar(x0, 430, 700, 330, "读得最多", [("星河笔记：在夜航中思考", 7400), ("慢读花园", 5200), ("清晨算法课", 3900), ("灯下的长期主义", 2600)])
-    svg += panel_bar(x0 + 740, 430, 700, 330, "阅读偏好", [("工具与效率", 15000), ("文学随笔", 9100), ("科学通识", 6300), ("心理成长", 4200)])
+    svg += panel_bar(x0, 430, 700, 330, "读得最多", STATS_LONGEST)
+    svg += panel_bar(x0 + 740, 430, 700, 330, "阅读偏好", STATS_CATEGORIES)
     svg += heat_panel(x0, 820, 1460, 430) if kind == "heatmap" else chart_panel(x0, 820, 1460, 430, "趋势概览", kind)
-    svg += panel_bar(x0, 1290, 700, 260, "常读作者", [("林小满", 9), ("周青禾", 6), ("陈亦舟", 4), ("顾南风", 3)])
-    svg += panel_bar(x0 + 740, 1290, 700, 260, "单次阅读时长分布", [("≤5 分钟", 3), ("5-15 分钟", 6), ("15-30 分钟", 9), ("30-60 分钟", 5)])
+    svg += panel_bar(x0, 1290, 700, 260, "常读作者", STATS_AUTHORS)
+    svg += panel_bar(x0 + 740, 1290, 700, 260, "单次阅读时长分布", STATS_SESSIONS)
     svg += badge(2020, 55, "示例数据", "#ecfdf5", "#047857")
     return shell(2400, 1640, svg)
 
@@ -379,6 +471,7 @@ def render_png(chrome: str, svg: str, output: Path, width: int, height: int, vie
 
 
 def main() -> None:
+    load_sample_data()
     chrome = chrome_binary()
     OUT.mkdir(parents=True, exist_ok=True)
     assets = {

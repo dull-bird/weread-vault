@@ -163,13 +163,20 @@ python -m unittest discover -s tests -v
 
 ### 重新生成文档示例截图
 
-`docs/assets/` 里的书架、笔记、统计截图使用虚构示例数据生成，不来自真实微信读书账号。需要重做这些图片时：
+`docs/assets/` 里的书架、笔记、统计截图使用虚构示例数据生成，不来自真实微信读书账号。虚拟数据源保存在 [`docs/sample-data/weread-vault-sample.sql`](docs/sample-data/weread-vault-sample.sql)，可在任意机器复现为 SQLite：
 
 ```bash
+python3 scripts/create-sample-db.py --db /tmp/weread-vault-sample.db
+```
+
+需要重做截图时：
+
+```bash
+python3 scripts/create-sample-db.py --sql docs/sample-data/weread-vault-sample.sql
 python3 scripts/generate-sample-doc-assets.py
 ```
 
-脚本需要本机有 Chrome / Chromium 和中文字体（如 Noto Sans CJK SC）。`docs/assets/how-it-works.png` 是单独流程图，不由该脚本生成。
+截图脚本会读取这份 SQL 临时建库，再从 SQLite 查询数据渲染 PNG；需要本机有 Chrome / Chromium 和中文字体（如 Noto Sans CJK SC）。`docs/assets/how-it-works.png` 是单独流程图，不由该脚本生成。
 
 ## License
 
