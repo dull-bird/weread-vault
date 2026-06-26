@@ -41,12 +41,13 @@ def _read_json_body(handler: BaseHTTPRequestHandler, limit: int = 4096) -> dict[
 
 
 def _sync_counts(service: SyncService, mode: str) -> dict[str, int]:
-    if mode == "books":
-        return {"books": service.books(), "notes": 0, "stats": 0}
+    if mode == "books":  # structural refresh + cleanup, no per-book note fetch
+        shelf, books = service.shelf(), service.books()
+        return {"shelf": shelf, "books": books, "removed": service.reconcile(), "notes": 0, "stats": 0}
     if mode == "notes":
-        return {"books": service.books(), "notes": service.notes(), "stats": service.stats()}
+        return service.all()
     if mode == "full":
-        return {"books": service.books(), "notes": service.notes(full=True), "stats": service.stats()}
+        return service.all(full_notes=True)
     raise ValueError("未知同步模式。")
 
 
@@ -1265,9 +1266,12 @@ def make_handler(db_path: Path):
                         emit({"done": True, "counts": counts})
                     else:
                         emit({"line": "正在同步书架…（首次可能较慢）"})
-                        counts = {"shelf": 0, "books": 0, "notes": 0, "stats": 0}
+                        counts = {"shelf": 0, "books": 0, "removed": 0, "notes": 0, "stats": 0}
                         counts["shelf"] = service.shelf()
                         counts["books"] = service.books()
+                        counts["removed"] = service.reconcile()
+                        if counts["removed"]:
+                            emit({"line": f"已清理 {counts['removed']} 本不在当前账号书架上的书（含旧账号残留）"})
                         emit({"line": "书架已就绪，开始同步笔记…"})
                         counts["notes"] = service.notes(full=(mode == "full"))
                         emit({"line": "同步阅读统计…"})

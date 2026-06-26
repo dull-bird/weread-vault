@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from .db import get_state, set_state
@@ -19,10 +21,17 @@ Reporter = Callable[[str], None]
 
 
 class SyncService:
-    def __init__(self, conn: sqlite3.Connection, gateway: Gateway, report: Reporter = print):
+    def __init__(self, conn: sqlite3.Connection, gateway: Gateway, report: Reporter = print,
+                 concurrency: int = 6):
         self.conn = conn
         self.gateway = gateway
         self.report = report
+        # Per-book note fetches are network-bound and the gateway is stateless, so we fetch
+        # several books at once. Writes still happen one-at-a-time on this thread (sqlite).
+        self.concurrency = max(1, int(os.environ.get("WEREAD_SYNC_CONCURRENCY", concurrency)))
+        # The set of book ids that belong to the current account, collected during a full
+        # sync (shelf + notebooks) and used to delete books left over from a previous account.
+        self._account_ids: set[str] = set()
 
     def _run(self, scope: str, action: Callable[[], int]) -> int:
         started = int(time.time())
@@ -127,8 +136,44 @@ class SyncService:
         return done
 
     def all(self, full_notes: bool = False, note_limit: int | None = None) -> dict[str, int]:
-        return {"shelf": self.shelf(), "books": self.books(),
-                "notes": self.notes(full_notes, note_limit), "stats": self.stats()}
+        shelf = self.shelf()      # resets + collects shelf + 归档 + 公众号 ids into self._account_ids
+        books = self.books()      # adds the noted-book ids from /user/notebooks
+        removed = self.reconcile()  # drop books from a previous account / removed from shelf
+        notes = self.notes(full_notes, note_limit)
+        stats = self.stats()
+        return {"shelf": shelf, "books": books, "removed": removed, "notes": notes, "stats": stats}
+
+    def reconcile(self) -> int:
+        return self._run("reconcile", self._reconcile)
+
+    def _reconcile(self) -> int:
+        """Delete local books that are not in the current account's full id set.
+
+        ``_account_ids`` is the union of the live shelf (including 归档 and 公众号) and every
+        noted book from /user/notebooks, so switching accounts removes the old account's books
+        (notes cascade) while books still on the shelf — or noted but off-shelf — are kept.
+        Guarded: if we never got a shelf snapshot, delete nothing.
+        """
+        if not self._account_ids:
+            return 0
+        # The local archive now matches this account — record its fingerprint.
+        fingerprint = account_fingerprint(self.gateway.api_key)
+        if fingerprint:
+            set_state(self.conn, "account_fp", fingerprint)
+        with self.conn:
+            self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _keep(book_id TEXT PRIMARY KEY)")
+            self.conn.execute("DELETE FROM _keep")
+            self.conn.executemany("INSERT OR IGNORE INTO _keep(book_id) VALUES (?)",
+                                  [(book_id,) for book_id in self._account_ids])
+            stale = [row[0] for row in self.conn.execute(
+                "SELECT book_id FROM books WHERE book_id NOT IN (SELECT book_id FROM _keep)")]
+            for book_id in stale:
+                # highlights / thoughts / popular_highlights cascade via ON DELETE CASCADE.
+                self.conn.execute("DELETE FROM books WHERE book_id=?", (book_id,))
+            self.conn.execute("DROP TABLE _keep")
+        if stale:
+            self.report(f"清理：移除 {len(stale)} 本不在当前账号书架上的书（含旧账号残留）")
+        return len(stale)
 
     def _sync_shelf(self) -> int:
         # The whole bookshelf, including books without any notes. Non-destructive: never
@@ -136,9 +181,21 @@ class SyncService:
         payload = self.gateway.call("/shelf/sync")
         books = payload.get("books") or []
         now = int(time.time())
+        self._account_ids = set()  # a fresh shelf snapshot starts the current-account id set
         with self.conn:
             for item in books:
                 self._upsert_shelf_book(item, now)
+        # Record every id that belongs to this account, so reconcile keeps them: shelf books,
+        # 归档 (archive) groups, and the 公众号 (mp) pseudo-book.
+        for item in books:
+            if item.get("bookId"):
+                self._account_ids.add(str(item["bookId"]))
+        for group in payload.get("archive") or []:
+            for book_id in group.get("bookIds") or []:
+                self._account_ids.add(str(book_id))
+        mp_book = (payload.get("mp") or {}).get("book") or {}
+        if mp_book.get("bookId"):
+            self._account_ids.add(str(mp_book["bookId"]))
         self.report(f"书架：{len(books)} 本")
         return len(books)
 
@@ -211,6 +268,9 @@ class SyncService:
             with self.conn:
                 for item in books:
                     self._upsert_book(item, now)
+            for item in books:
+                if item.get("bookId"):
+                    self._account_ids.add(str(item["bookId"]))
             count += len(books)
             self.report(f"书目：已处理 {count} 本")
             if payload.get("hasMore") != 1:
@@ -254,7 +314,11 @@ class SyncService:
             )
 
     def _sync_notes(self, full: bool, limit: int | None) -> int:
-        where = "" if full else "WHERE notes_synced_sort IS NULL OR sort > notes_synced_sort"
+        # Only books that actually have notes need fetching — shelf-only books (total_notes=0)
+        # have nothing to pull, so skipping them avoids two wasted requests each.
+        where = "WHERE total_notes > 0"
+        if not full:
+            where += " AND (notes_synced_sort IS NULL OR sort > notes_synced_sort)"
         sql = f"SELECT book_id, title, sort FROM books {where} ORDER BY sort DESC"  # controlled SQL fragment
         values: tuple[int, ...] = ()
         if limit is not None:
@@ -263,26 +327,45 @@ class SyncService:
         rows = self.conn.execute(sql, values).fetchall()
         total = len(rows)
         self.report(f"笔记：待同步 {total} 本")
+
+        def fetch(book: sqlite3.Row) -> tuple[sqlite3.Row, dict[str, Any], list[dict[str, Any]]]:
+            # Network only (no sqlite) — safe to run on a worker thread; the gateway is stateless.
+            return book, self._fetch_highlights(book["book_id"]), self._fetch_thoughts(book["book_id"])
+
         synced = 0
-        for index, book in enumerate(rows, 1):
-            try:
-                highlights = self._fetch_highlights(book["book_id"])
-                thoughts = self._fetch_thoughts(book["book_id"])
-                # All remote pages are collected before entering the transaction. A request failure
-                # therefore cannot leave a partially refreshed book or advance its watermark.
-                with self.conn:
-                    self._replace_book_notes(book["book_id"], book["sort"], highlights, thoughts)
-                synced += 1
-                self.report(
-                    f"笔记：[{index}/{total}] {book['title'] or book['book_id']} — "
-                    f"划线 {len(highlights['updated'])}，想法 {len(thoughts)}"
-                )
-            except Exception as error:
-                self.report(f"笔记：[{index}/{total}] {book['title'] or book['book_id']} 失败：{error}")
-            time.sleep(self.gateway.sleep_seconds)
+        done = 0
+        # Fetch several books concurrently, then write each result on this thread inside its own
+        # transaction (all pages collected before the write, so a failure never advances a watermark).
+        with ThreadPoolExecutor(max_workers=min(self.concurrency, total or 1)) as pool:
+            for book, highlights, thoughts in self._imap(pool, fetch, rows):
+                done += 1
+                title = book["title"] or book["book_id"]
+                if isinstance(highlights, Exception):
+                    self.report(f"笔记：[{done}/{total}] {title} 失败：{highlights}")
+                    continue
+                try:
+                    with self.conn:
+                        self._replace_book_notes(book["book_id"], book["sort"], highlights, thoughts)
+                    synced += 1
+                    self.report(
+                        f"笔记：[{done}/{total}] {title} — 划线 {len(highlights['updated'])}，想法 {len(thoughts)}")
+                except Exception as error:
+                    self.report(f"笔记：[{done}/{total}] {title} 失败：{error}")
         if synced != total:
             raise RuntimeError(f"{total - synced} 本书同步失败；成功的书已安全提交，失败的书下次会重试。")
         return synced
+
+    @staticmethod
+    def _imap(pool: ThreadPoolExecutor, fetch: Callable[[Any], Any], items: list[Any]):
+        """Run ``fetch`` over items concurrently; yield results as they complete. A failed fetch
+        is yielded as ``(item, exception, None)`` so the caller can report it and carry on."""
+        from concurrent.futures import as_completed
+        futures = {pool.submit(fetch, item): item for item in items}
+        for future in as_completed(futures):
+            try:
+                yield future.result()
+            except Exception as error:  # noqa: BLE001 — surfaced per-book to the caller
+                yield futures[future], error, None
 
     def _fetch_highlights(self, book_id: str) -> dict[str, Any]:
         payload = self.gateway.call("/book/bookmarklist", bookId=book_id)

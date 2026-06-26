@@ -250,7 +250,14 @@ def main(argv: list[str] | None = None) -> None:
                     count = service.popular(args.limit, args.refresh)
                 else:
                     count = service.all(args.full_notes, args.limit)
-            print(f"同步完成：{count}")
+            if isinstance(count, dict):
+                parts = [f"书架 {count['shelf']}", f"书目 {count['books']}",
+                         f"笔记 {count['notes']}", f"统计 {count['stats']}"]
+                if count.get("removed"):
+                    parts.append(f"清理旧书 {count['removed']}")
+                print("同步完成：" + "，".join(parts))
+            else:
+                print(f"同步完成：{count}")
         elif args.command == "status":
             _print_status(db_path)
         elif args.command == "update":

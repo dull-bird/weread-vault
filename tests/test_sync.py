@@ -10,11 +10,15 @@ from weread_vault.sync import SyncService
 
 class FakeGateway:
     sleep_seconds = 0
+    api_key = "fake-key"
 
     def __init__(self, fail_reviews: bool = False):
         self.fail_reviews = fail_reviews
+        self.bookmark_calls: list[str] = []
 
     def call(self, endpoint, **params):
+        if endpoint == "/book/bookmarklist":
+            self.bookmark_calls.append(params.get("bookId"))
         if endpoint == "/user/notebooks":
             return {
                 "hasMore": 0,
@@ -77,6 +81,35 @@ class SyncTests(unittest.TestCase):
             # existing noted book keeps its note count (shelf sync is non-destructive)
             noted_after = conn.execute("SELECT total_notes FROM books WHERE book_id='book-1'").fetchone()[0]
             self.assertEqual(noted_after, noted_before)
+
+    def test_account_switch_removes_old_account_books_with_their_notes(self):
+        with connect(self.db_path) as conn:
+            # Seed a book (with a note) that belongs to a previous account and is NOT on the
+            # current shelf / notebooks returned by FakeGateway.
+            conn.execute("INSERT INTO books(book_id,title,total_notes,sort,synced_at) VALUES('old-1','旧账号的书',3,5,0)")
+            conn.execute(
+                "INSERT INTO highlights(bookmark_id,book_id,chapter_uid,chapter_title,mark_text,text_range,create_time,updated_at)"
+                " VALUES('om1','old-1',1,'C','旧划线','1',1,0)")
+            conn.commit()
+            result = SyncService(conn, FakeGateway(), report=lambda _: None).all()
+            self.assertEqual(result["removed"], 1)
+            self.assertIsNone(conn.execute("SELECT 1 FROM books WHERE book_id='old-1'").fetchone())
+            # its highlights cascade away; current-account books remain
+            self.assertEqual(conn.execute("SELECT count(*) FROM highlights WHERE book_id='old-1'").fetchone()[0], 0)
+            self.assertIsNotNone(conn.execute("SELECT 1 FROM books WHERE book_id='book-1'").fetchone())
+            self.assertIsNotNone(conn.execute("SELECT 1 FROM books WHERE book_id='book-2'").fetchone())
+
+    def test_notes_skips_books_without_notes(self):
+        with connect(self.db_path) as conn:
+            gateway = FakeGateway()
+            service = SyncService(conn, gateway, report=lambda _: None)
+            service.shelf()  # adds book-1 and book-2 (book-2 has total_notes=0)
+            service.books()  # book-1 gets notes from notebooks
+            synced = service.notes()
+            self.assertEqual(synced, 1)  # only book-1
+            # book-2 (no notes) is never fetched
+            self.assertNotIn("book-2", gateway.bookmark_calls)
+            self.assertIn("book-1", gateway.bookmark_calls)
 
     def test_successful_book_is_atomic_and_searchable(self):
         with connect(self.db_path) as conn:

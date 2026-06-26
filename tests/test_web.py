@@ -111,7 +111,7 @@ class WebTests(unittest.TestCase):
     def test_stats_endpoint_reports_no_data_when_empty(self):
         self.assertEqual(self.get_json("/api/stats"), {"hasData": False})
 
-    def test_sync_endpoint_defaults_to_incremental_notes(self):
+    def test_sync_endpoint_defaults_to_full_pipeline_with_reconcile(self):
         calls: list[str] = []
         original_gateway = web.Gateway
         original_sync_service = web.SyncService
@@ -123,17 +123,9 @@ class WebTests(unittest.TestCase):
             def __init__(self, conn, gateway, report=print):
                 calls.append(type(gateway).__name__)
 
-            def books(self):
-                calls.append("books")
-                return 1
-
-            def notes(self, full=False):
-                calls.append(f"notes:{full}")
-                return 2
-
-            def stats(self):
-                calls.append("stats")
-                return 3
+            def all(self, full_notes=False, note_limit=None):
+                calls.append(f"all:{full_notes}")
+                return {"shelf": 5, "books": 1, "removed": 2, "notes": 3, "stats": 4}
 
         try:
             web.Gateway = FakeGateway
@@ -141,13 +133,14 @@ class WebTests(unittest.TestCase):
             request = urllib.request.Request(f"{self.base_url}/api/sync", method="POST")
             with urllib.request.urlopen(request) as response:
                 body = json.loads(response.read().decode("utf-8"))
-            self.assertEqual(body, {"status": "ok", "mode": "notes", "counts": {"books": 1, "notes": 2, "stats": 3}})
-            self.assertEqual(calls, ["FakeGateway", "books", "notes:False", "stats"])
+            self.assertEqual(body, {"status": "ok", "mode": "notes",
+                                    "counts": {"shelf": 5, "books": 1, "removed": 2, "notes": 3, "stats": 4}})
+            self.assertEqual(calls, ["FakeGateway", "all:False"])
         finally:
             web.Gateway = original_gateway
             web.SyncService = original_sync_service
 
-    def test_sync_endpoint_supports_books_only_mode(self):
+    def test_sync_endpoint_books_mode_reconciles_without_notes(self):
         calls: list[str] = []
         original_sync_service = web.SyncService
 
@@ -155,17 +148,17 @@ class WebTests(unittest.TestCase):
             def __init__(self, conn, gateway, report=print):
                 pass
 
+            def shelf(self):
+                calls.append("shelf")
+                return 7
+
             def books(self):
                 calls.append("books")
                 return 9
 
-            def notes(self, full=False):
-                calls.append("notes")
-                return 0
-
-            def stats(self):
-                calls.append("stats")
-                return 0
+            def reconcile(self):
+                calls.append("reconcile")
+                return 3
 
         try:
             web.SyncService = FakeSyncService
@@ -177,8 +170,9 @@ class WebTests(unittest.TestCase):
             )
             with urllib.request.urlopen(request) as response:
                 body = json.loads(response.read().decode("utf-8"))
-            self.assertEqual(body, {"status": "ok", "mode": "books", "counts": {"books": 9, "notes": 0, "stats": 0}})
-            self.assertEqual(calls, ["books"])
+            self.assertEqual(body, {"status": "ok", "mode": "books",
+                                    "counts": {"shelf": 7, "books": 9, "removed": 3, "notes": 0, "stats": 0}})
+            self.assertEqual(calls, ["shelf", "books", "reconcile"])
         finally:
             web.SyncService = original_sync_service
 
