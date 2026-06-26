@@ -23,6 +23,8 @@ header{text-align:center;padding:70px 22px 32px;background:radial-gradient(900px
 .note{color:var(--muted);font-size:13px;max-width:640px;margin:12px auto 0;line-height:1.7}
 .shot{margin:34px auto 0;max-width:1000px}
 .shot img{width:100%;border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px -16px #1b212833;display:block}
+.shot figcaption{text-align:center;color:var(--muted);font-size:13px;margin-top:12px}
+.shot.heatmap{margin-top:28px}
 section{padding:50px 0}
 h2{font-size:24px;letter-spacing:-.02em;text-align:center;margin:0 0 8px}
 .h2sub{text-align:center;color:var(--muted);margin:0 0 26px;font-size:14px}
@@ -165,12 +167,12 @@ weread-vault serve --open</code></pre>
 <figure class="on"><img src="assets/stats-all.png" alt="全部"><figcaption>全部 —— 累计时长、读得最多、偏好分类</figcaption></figure>
 <figure><img src="assets/stats-year.png" alt="今年"><figcaption>今年 —— 每月时长、同比、本年排行</figcaption></figure>
 <figure><img src="assets/stats-month.png" alt="本月"><figcaption>本月 —— 每日时长、较上月增长、本月读得最多</figcaption></figure>
-<figure><img src="assets/stats-heatmap.png" alt="热力图"><figcaption>划线热力图 —— GitHub 式，每日活跃度，多年</figcaption></figure>
 </div>
 <button class="arr prev" aria-label="上一张">‹</button>
 <button class="arr next" aria-label="下一张">›</button>
 <div class="dots"></div>
 </div>
+<figure class="shot heatmap"><img src="assets/stats-heatmap.png" alt="划线热力图"><figcaption>划线热力图 —— GitHub 式，每日活跃度，跨多年一目了然</figcaption></figure>
 </div>
 </section>
 

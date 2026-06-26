@@ -59,12 +59,21 @@ def load_books() -> list[tuple[str, str, str, str, str, str, int, int]]:
         color1, color2 = COLOR_PAIRS[(index - 1) % len(COLOR_PAIRS)]
         progress = 100 if index <= 38 else max(8, 92 - (index * 7) % 84)
         notes = 0 if index > 42 and index % 3 else 2 + (index * 5) % 17
+        title = str(item.get("title") or f"示例书 {index}")
+        author = str(item.get("author") or "未知作者")
+        category = str(item.get("category") or "未分类")
+        # sample-001 是详情页演示书：它的章节/划线/想法是手写的固定内容
+        # （讲“保存阅读现场 / 本地优先 / 与 AI 协作”），所以标题也要对得上，
+        # 否则会出现“塔勒布的书里讲本地优先”这种穿帮。
+        if index == 1:
+            title, author, category = "重读：把划线存进自己的数据库", "林小满", "工具与效率-效率"
+            progress, notes = 92, 4
         books.append(
             (
                 f"sample-{index:03d}",
-                str(item.get("title") or f"示例书 {index}"),
-                str(item.get("author") or "未知作者"),
-                str(item.get("category") or "未分类"),
+                title,
+                author,
+                category,
                 color1,
                 color2,
                 progress,
