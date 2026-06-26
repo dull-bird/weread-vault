@@ -14,12 +14,12 @@
 
 ## ✨ 特点
 
-- 🔒 **本地优先**：所有数据只存在本机一个 SQLite 文件里，可备份、可迁移、可离线，永远不上传；网页只监听 `127.0.0.1`。
-- 📚 **完整书架**：同步整个书架（含无笔记的书；公众号单独归类），不只是有笔记的那一部分。
-- 📊 **阅读统计看板**：纯 SVG 零依赖渲染——本周/本月/今年/全部切换、同比、读得最多排行、偏好分类、24 小时时段、GitHub 式划线热力图、单次时长分布（还给「碎片化严重」这样的结论）。
-- 🔥 **不只是你自己**：每本书能看「大家都在划的句子」（含人数、可按原文顺序）和公开书评；还能搜微信读书书城、看同作者的相关书。
-- 🤖 **AI 原生**：CLI 暴露整套微信读书 API + 只读 SQL 查询 + 已解析统计 JSON，可直接交给 Claude Code、Codex、OpenClaw 等 agent；自带荐书 Skill。
-- 📝 **导出到你的知识库**：Markdown（含封面、可合并他人热门划线并去重）、Obsidian、flomo、Notion。
+- 🔒 **本地优先**：所有数据都存在本机的一个 SQLite 文件里，可备份、可迁移、能离线用，永不上传；本地网页也只监听 `127.0.0.1`。
+- 📚 **完整书架**：把整个书架都同步下来——连没做笔记的书也在，公众号单独归类，而不只是有划线的那一部分。
+- 📊 **阅读统计**：按周、月、年、全部切换，数字随之变化——读得最久的书、偏爱的分类、常读的时段、同比涨跌、单次时长分布，还有 GitHub 式的划线热力图（纯 SVG 渲染，零依赖）。
+- 🔥 **不只是你自己**：除了自己的划线，还能看「大家都在划的句子」（含人数、可按原文顺序）和公开书评；还能搜微信读书书城、顺着同一作者找到更多书。
+- 🤖 **AI 原生**：一套命令行就把微信读书接口、只读 SQL 查询、已解析的统计 JSON 都交给 AI——Claude Code、Codex、OpenClaw 拿来就能用；自带荐书 Skill。
+- 📝 **导出到你的知识库**：导出成 Markdown（带封面，可合并他人热门划线并去重），或一键同步到 Obsidian、flomo、Notion。
 - 🧰 **零第三方依赖**：纯 Python 标准库 + SQLite，有 Python 就能跑。
 
 ## 📦 安装
@@ -213,20 +213,13 @@ python -m unittest discover -s tests -v
 
 ### 重新生成文档截图
 
-`docs/assets/` 里的书架、笔记、统计截图来自真实阅读库（真实封面、划线、想法与统计）。仓库另外提供一套**示例数据**，用于在没有真实数据时复现一套不含个人内容的 UI 截图：书籍种子在 [`docs/sample-data/sample-books.json`](docs/sample-data/sample-books.json)，生成的虚拟数据库 SQL 在 [`docs/sample-data/weread-vault-sample.sql`](docs/sample-data/weread-vault-sample.sql)，可在任意机器复现为 SQLite：
+`docs/assets/` 里的书架、笔记、统计截图，由一份精选的示例库 [`docs/sample-data/weread-vault-sample.sql`](docs/sample-data/weread-vault-sample.sql) 渲染——真实封面、真实推荐值、真实划线与统计。重做截图：
 
 ```bash
-python3 scripts/create-sample-db.py --db /tmp/weread-vault-sample.db
-```
-
-需要重做截图时：
-
-```bash
-python3 scripts/create-sample-db.py --sql docs/sample-data/weread-vault-sample.sql
 python3 scripts/generate-sample-doc-assets.py
 ```
 
-截图脚本会读取这份 SQL 临时建库，再从 SQLite 查询数据渲染 PNG；需要本机有 Chrome / Chromium 和中文字体（如 Noto Sans CJK SC）。`docs/assets/how-it-works.png` 是单独流程图，不由该脚本生成。
+脚本读取这份 SQL 临时建库，启动本地网页，再用无头 Chrome 以 2 倍像素密度截图；需要本机有 Chrome / Chromium 和中文字体（如 Noto Sans CJK SC）。`docs/assets/how-it-works.png` 是单独的流程图，不由该脚本生成。
 
 ## License
 

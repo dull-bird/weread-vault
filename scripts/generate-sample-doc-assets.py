@@ -26,11 +26,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "assets"
+SAMPLE_SQL = ROOT / "docs" / "sample-data" / "weread-vault-sample.sql"
+# 详情页演示书：从示例库里真实存在的 book_id（划线最多、有想法和热门划线的那本）。
+DETAIL_BOOK = "38260364"  # 《给教师的建议》
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from sample_data import create_sample_db  # noqa: E402
+import sqlite3  # noqa: E402
+
 from weread_vault.web import make_handler  # noqa: E402
+
+
+def build_sample_db(db_path: Path) -> None:
+    """从提交在仓库里的示例 SQL（真实的 100 本精选书）重建一个 SQLite，用于截图。"""
+    conn = sqlite3.connect(db_path)
+    conn.executescript(SAMPLE_SQL.read_text(encoding="utf-8"))
+    conn.close()
 
 
 def chrome_binary() -> str:
@@ -79,7 +90,8 @@ def screenshot(chrome: str, url: str, output: Path, width: int, height: int) -> 
                 "--hide-scrollbars",
                 f"--user-data-dir={profile}",
                 f"--window-size={width},{height}",
-                "--virtual-time-budget=2500",
+                "--force-device-scale-factor=2",  # 2 倍像素密度，封面和文字不发糊
+                "--virtual-time-budget=4000",  # 多给点时间等真实书封从 CDN 加载完
                 f"--screenshot={output}",
                 url,
             ],
@@ -94,7 +106,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "weread-vault-sample.db"
-        create_sample_db(db_path)
+        build_sample_db(db_path)
         port = free_port()
         server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(db_path))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -102,14 +114,15 @@ def main() -> None:
         base = f"http://127.0.0.1:{port}/"
         try:
             wait_for_server(base)
+            b = f"?book={DETAIL_BOOK}"
             assets = {
                 "dashboard.png": ("", 1440, 1040),
-                "book-detail.png": ("?book=sample-001", 1440, 1040),
-                "detail-mine.png": ("?book=sample-001&tab=mine", 1280, 980),
-                "detail-popular.png": ("?book=sample-001&tab=popular", 1280, 980),
-                "detail-reviews.png": ("?book=sample-001&tab=reviews", 1280, 980),
-                "detail-similar.png": ("?book=sample-001&tab=similar", 1280, 980),
-                "popular-highlights.png": ("?book=sample-001&tab=popular", 1440, 1040),
+                "book-detail.png": (b, 1440, 1040),
+                "detail-mine.png": (f"{b}&tab=mine", 1280, 980),
+                "detail-popular.png": (f"{b}&tab=popular", 1280, 980),
+                "detail-reviews.png": (f"{b}&tab=reviews", 1280, 980),
+                "detail-similar.png": (f"{b}&tab=similar", 1280, 980),
+                "popular-highlights.png": (f"{b}&tab=popular", 1440, 1040),
                 "reading-stats.png": ("?view=stats&period=overall", 1440, 1040),
                 "stats-all.png": ("?view=stats&period=overall", 1280, 1320),
                 "stats-year.png": ("?view=stats&period=annually", 1280, 1320),
