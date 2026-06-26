@@ -65,6 +65,38 @@ class IntegrationTests(unittest.TestCase):
         with connect(self.db_path) as conn:
             self.assertEqual(export_flomo(conn, "u", limit=1, poster=lambda *a: {}), 1)
 
+    def test_notion_appends_blocks_in_batches_over_100(self):
+        # Give b1 enough highlights that its blocks exceed Notion's 100-per-request cap.
+        with connect(self.db_path) as conn:
+            for i in range(250):
+                conn.execute(
+                    "INSERT INTO highlights(bookmark_id,book_id,chapter_uid,chapter_title,mark_text,text_range,create_time,updated_at)"
+                    " VALUES(?,?,?,?,?,?,?,?)",
+                    (f"x{i}", "b1", 2, "第二章", f"划线{i}", str(i + 10), i, i),
+                )
+        calls = []
+
+        def poster(url, payload, headers, method="POST"):
+            calls.append((url, payload, method))
+            return {"id": "page1"}
+
+        with connect(self.db_path) as conn:
+            created = export_notion(conn, "tok", "db", poster=poster)
+
+        self.assertEqual(created, 1)
+        creates = [c for c in calls if c[2] == "POST"]
+        appends = [c for c in calls if c[2] == "PATCH"]
+        self.assertEqual(len(creates), 1)
+        self.assertEqual(creates[0][0], "https://api.notion.com/v1/pages")
+        self.assertTrue(appends, "blocks over 100 should be appended, not dropped")
+        self.assertTrue(all(c[0] == "https://api.notion.com/v1/blocks/page1/children" for c in appends))
+        # Every request stays within the 100-block cap.
+        self.assertEqual(len(creates[0][1]["children"]), 100)
+        self.assertTrue(all(len(c[1]["children"]) <= 100 for c in appends))
+        # Nothing is truncated: 1 + 250 highlights + 1 thought + 2 chapter headings = 254 blocks.
+        delivered = len(creates[0][1]["children"]) + sum(len(c[1]["children"]) for c in appends)
+        self.assertEqual(delivered, 254)
+
 
 if __name__ == "__main__":
     unittest.main()

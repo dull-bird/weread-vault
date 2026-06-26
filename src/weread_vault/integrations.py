@@ -2,8 +2,8 @@
 
 Each exporter takes an injectable ``poster`` so the network call can be stubbed in
 tests. Secrets (flomo webhook, Notion token) are passed in by the caller and are
-never logged. Exporters only read the local database and POST the user's own data
-to the user's own destination.
+never logged. Exporters only read the local database and send the user's own data
+to the user's own destination (POST to create, PATCH to append further Notion blocks).
 """
 
 from __future__ import annotations
@@ -16,13 +16,13 @@ from typing import Any
 
 from .errors import WereadVaultError
 
-Poster = Callable[[str, dict[str, Any], dict[str, str]], dict[str, Any]]
+Poster = Callable[..., dict[str, Any]]
 
 
-def _http_post(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+def _http_post(url: str, payload: dict[str, Any], headers: dict[str, str], method: str = "POST") -> dict[str, Any]:
     request = urllib.request.Request(
         url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json", **headers}, method="POST",
+        headers={"Content-Type": "application/json", **headers}, method=method,
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         body = response.read().decode("utf-8")
@@ -105,13 +105,22 @@ def _notion_blocks(highlights: list[sqlite3.Row], thoughts: list[sqlite3.Row]) -
         text = (thought["content"] or "").strip()
         if text:
             blocks.append(_text_block("callout", text))
-    return blocks[:100]  # Notion accepts at most 100 children per page-create call.
+    return blocks
+
+
+# Notion accepts at most 100 child blocks per request (both on page-create and on append).
+_NOTION_CHUNK = 100
 
 
 def export_notion(
     conn: sqlite3.Connection, token: str, database_id: str, limit: int | None = None, poster: Poster = _http_post
 ) -> int:
-    """Create one Notion page per book under the given database. Returns pages created."""
+    """Create one Notion page per book under the given database. Returns pages created.
+
+    Notion caps children at 100 per request, so books with more notes are written in
+    batches: the first 100 blocks go in with the page, the rest are appended 100 at a
+    time via PATCH .../blocks/{page_id}/children — nothing gets truncated.
+    """
     if not token or not database_id:
         raise WereadVaultError("缺少 Notion token 或 database id。")
     headers = {"Authorization": f"Bearer {token}", "Notion-Version": "2022-06-28"}
@@ -120,11 +129,18 @@ def export_notion(
         highlights, thoughts = _notes(conn, book["book_id"])
         if not highlights and not thoughts:
             continue
+        blocks = _notion_blocks(highlights, thoughts)
         payload = {
             "parent": {"database_id": database_id},
             "properties": {"Name": {"title": [{"text": {"content": (book["title"] or "未命名")[:1990]}}]}},
-            "children": _notion_blocks(highlights, thoughts),
+            "children": blocks[:_NOTION_CHUNK],
         }
-        poster("https://api.notion.com/v1/pages", payload, headers)
+        page = poster("https://api.notion.com/v1/pages", payload, headers)
+        page_id = (page or {}).get("id")
+        # Append any remaining blocks; needs the new page's id (absent only when stubbed).
+        if page_id:
+            for start in range(_NOTION_CHUNK, len(blocks), _NOTION_CHUNK):
+                poster(f"https://api.notion.com/v1/blocks/{page_id}/children",
+                       {"children": blocks[start:start + _NOTION_CHUNK]}, headers, "PATCH")
         created += 1
     return created
