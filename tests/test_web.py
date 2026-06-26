@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import threading
+import time
 import unittest
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -74,6 +75,30 @@ class WebTests(unittest.TestCase):
         self.assertEqual(len(overall["preferTime"]), 24)
         self.assertEqual(len(data["periods"]["overall"]["preferTime"]), 24)
         self.assertEqual(data["periods"]["overall"]["authors"][0]["name"], "刘慈欣")
+
+    def test_stats_endpoint_estimates_missing_time_and_authors_from_highlights(self):
+        now = int(time.time())
+        with connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO reading_stats(mode, base_time, payload, fetched_at) VALUES('overall', 0, ?, 100)",
+                (json.dumps({"totalReadTime": 1, "readDays": 1}),),
+            )
+            conn.execute(
+                "INSERT INTO reading_stats(mode, base_time, payload, fetched_at) VALUES('weekly', 0, ?, 101)",
+                (json.dumps({"totalReadTime": 1, "readDays": 1}),),
+            )
+            conn.execute(
+                """INSERT INTO highlights(bookmark_id,book_id,chapter_uid,chapter_title,mark_text,text_range,create_time,updated_at)
+                VALUES('mark-1','book-1',1,'Chapter','A highlight','1',?,?)""",
+                (now, now),
+            )
+        data = self.get_json("/api/stats")
+        weekly = data["periods"]["weekly"]
+        self.assertEqual(weekly["preferTimeSource"], "划线时间估算")
+        self.assertGreater(sum(weekly["preferTime"]), 0)
+        self.assertEqual(weekly["authorsSource"], "划线时间估算")
+        self.assertEqual(weekly["authors"][0]["name"], "Author")
+        self.assertEqual(weekly["authors"][0]["readTime"], "1 条划线")
 
     def test_stats_endpoint_reports_no_data_when_empty(self):
         self.assertEqual(self.get_json("/api/stats"), {"hasData": False})

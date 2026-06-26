@@ -179,9 +179,51 @@ def _session_distribution(conn: sqlite3.Connection, gap: int = 1800, since: int 
             "shortShare": round(short_share, 3)}
 
 
+def _period_starts(now: int) -> dict[str, int]:
+    lt = time.localtime(now)
+    start_day = int(time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)))
+    start_week = start_day - lt.tm_wday * 86400
+    start_month = int(time.mktime((lt.tm_year, lt.tm_mon, 1, 0, 0, 0, 0, 0, -1)))
+    start_year = int(time.mktime((lt.tm_year, 1, 1, 0, 0, 0, 0, 0, -1)))
+    return {"weekly": start_week, "monthly": start_month, "annually": start_year, "overall": 0}
+
+
+def _estimated_prefer_time(conn: sqlite3.Connection, since: int, until: int) -> list[int]:
+    values = [0] * 24
+    for row in conn.execute(
+        """SELECT CAST(strftime('%H', datetime(create_time,'unixepoch','+8 hours')) AS INTEGER) AS h,
+        count(*) AS c FROM highlights WHERE create_time IS NOT NULL AND create_time>=? AND create_time<?
+        GROUP BY h""",
+        (since, until),
+    ):
+        if row["h"] is not None:
+            values[int(row["h"])] = int(row["c"] or 0)
+    return values
+
+
+def _estimated_authors(conn: sqlite3.Connection, since: int, until: int) -> list[dict[str, object]]:
+    return [
+        {"name": row["author"] or "未知作者", "count": int(row["books"] or 0),
+         "readTime": f"{int(row['marks'] or 0)} 条划线"}
+        for row in conn.execute(
+            """SELECT COALESCE(NULLIF(b.author,''),'未知作者') AS author,
+            count(*) AS marks, count(DISTINCT h.book_id) AS books
+            FROM highlights h JOIN books b ON b.book_id=h.book_id
+            WHERE h.create_time IS NOT NULL AND h.create_time>=? AND h.create_time<?
+            GROUP BY author ORDER BY marks DESC, books DESC, author LIMIT 8""",
+            (since, until),
+        )
+    ]
+
+
 def _parse_period(payload: dict[str, object]) -> dict[str, object]:
     total = payload.get("totalReadTime", 0) or 0
     days = payload.get("readDays", 0) or 0
+    prefer_time = payload.get("preferTime") or []
+    authors = [
+        {"name": a.get("name"), "count": a.get("count", 0), "readTime": a.get("readTime", "")}
+        for a in (payload.get("preferAuthor") or [])
+    ][:8]
     return {
         "totalReadTime": total,
         "readDays": days,
@@ -197,12 +239,11 @@ def _parse_period(payload: dict[str, object]) -> dict[str, object]:
             {"title": c.get("categoryTitle"), "count": c.get("readingCount", 0), "seconds": c.get("readingTime", 0)}
             for c in (payload.get("preferCategory") or [])
         ][:8],
-        "preferTime": payload.get("preferTime", []),
+        "preferTime": prefer_time,
         "preferTimeWord": payload.get("preferTimeWord", ""),
-        "authors": [
-            {"name": a.get("name"), "count": a.get("count", 0), "readTime": a.get("readTime", "")}
-            for a in (payload.get("preferAuthor") or [])
-        ][:8],
+        "preferTimeSource": "微信读书接口" if prefer_time else "",
+        "authors": authors,
+        "authorsSource": "微信读书接口" if authors else "",
     }
 
 
@@ -249,15 +290,22 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
         "SELECT date(create_time,'unixepoch','+8 hours') AS d, count(*) AS c "
         "FROM highlights WHERE create_time IS NOT NULL GROUP BY d"
     )}
-    # Fragmentation per period (from highlight timestamps within each window).
     now = int(time.time())
-    lt = time.localtime(now)
-    start_month = int(time.mktime((lt.tm_year, lt.tm_mon, 1, 0, 0, 0, 0, 0, -1)))
-    start_year = int(time.mktime((lt.tm_year, 1, 1, 0, 0, 0, 0, 0, -1)))
+    starts = _period_starts(now)
+    for mode, period in periods.items():
+        since = starts.get(mode, 0)
+        if not period.get("preferTime"):
+            period["preferTime"] = _estimated_prefer_time(conn, since, now + 1)
+            period["preferTimeSource"] = "划线时间估算"
+            period["preferTimeWord"] = ""
+        if not period.get("authors"):
+            period["authors"] = _estimated_authors(conn, since, now + 1)
+            period["authorsSource"] = "划线时间估算"
+    # Fragmentation per period (from highlight timestamps within each window).
     sessions = {
-        "weekly": _session_distribution(conn, since=now - 7 * 86400),
-        "monthly": _session_distribution(conn, since=start_month),
-        "annually": _session_distribution(conn, since=start_year),
+        "weekly": _session_distribution(conn, since=starts["weekly"]),
+        "monthly": _session_distribution(conn, since=starts["monthly"]),
+        "annually": _session_distribution(conn, since=starts["annually"]),
         "overall": _session_distribution(conn),
     }
     return {
@@ -690,11 +738,13 @@ function sessPanel(s){if(!s||!s.distribution)return'';
  return `<div class=panel><h3>单次阅读时长分布（碎片化） <span class=src>本地计算</span></h3>${s.verdict?`<div class=verdict>${esc(s.verdict)}</div>`:''}${s.distribution.map(x=>`<div class=hbar><span class=nm>${esc(x.label)}</span><span class=tk><i style="width:${(x.count/mx*100).toFixed(0)}%"></i></span><span class=vv>${x.count} 次</span></div>`).join('')}<div style='font-size:11px;color:var(--muted);margin-top:10px'>据划线时间推断的阅读会话（${s.total} 次）；纯阅读未划线的部分不计入，仅供参考。</div></div>`;}
 function periodLabel(key){return ({weekly:'本周',monthly:'本月',annually:'今年',overall:'总体'}[key]||'当前周期')}
 function timePanel(p,key){const vals=p.preferTime||[];
- if(!vals.length)return `<div class=panel><h3>时段分布（${periodLabel(key)}） <span class=src>微信读书接口</span></h3><div class=note-empty style='padding:18px;text-align:left'>本周期暂无时段分布数据。</div></div>`;
- return `<div class=panel><h3>时段分布（${periodLabel(key)}）${p.preferTimeWord?` · ${esc(p.preferTimeWord)}`:''} <span class=src>微信读书接口</span></h3>${barChart(vals.map((v,i)=>({label:i+'时',tick:i%6===0?i:'',value:v})),{h:150})}</div>`}
+ const src=p.preferTimeSource||'微信读书接口',empty=!vals.length||!vals.some(v=>v>0);
+ if(empty)return `<div class=panel><h3>时段分布（${periodLabel(key)}） <span class=src>${esc(src)}</span></h3><div class=note-empty style='padding:18px;text-align:left'>本周期暂无时段分布数据。</div></div>`;
+ return `<div class=panel><h3>时段分布（${periodLabel(key)}）${p.preferTimeWord?` · ${esc(p.preferTimeWord)}`:''} <span class=src>${esc(src)}</span></h3>${barChart(vals.map((v,i)=>({label:i+'时',tick:i%6===0?i:'',value:v})),{h:150})}</div>`}
 function authorPanel(p,key){const authors=p.authors||[];
- if(!authors.length)return `<div class=panel><h3>常读作者 Top（${periodLabel(key)}） <span class=src>微信读书接口</span></h3><div class=note-empty style='padding:18px;text-align:left'>本周期暂无常读作者数据。</div></div>`;
- return `<div class=panel><h3>常读作者 Top（${periodLabel(key)}） <span class=src>微信读书接口</span></h3>${authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`}
+ const src=p.authorsSource||'微信读书接口';
+ if(!authors.length)return `<div class=panel><h3>常读作者 Top（${periodLabel(key)}） <span class=src>${esc(src)}</span></h3><div class=note-empty style='padding:18px;text-align:left'>本周期暂无常读作者数据。</div></div>`;
+ return `<div class=panel><h3>常读作者 Top（${periodLabel(key)}） <span class=src>${esc(src)}</span></h3>${authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`}
 function renderPeriod(p,key,charts,sessions){if(!p)return'<div class=note-empty>该周期暂无数据。</div>';
  const cmp=p.compare,cmpTxt=(cmp==null)?'':`<span class='cmp ${cmp>=0?'up':'down'}'>较上个周期 ${cmp>=0?'↑':'↓'} ${Math.abs(Math.round(cmp*100))}%</span>`;
  const head=`<div class=panel><h3>阅读概览 <span class=src>微信读书接口</span></h3><div class=big><div><span class=v>${fmtDur2(p.totalReadTime)}</span> <span class=l>时长</span></div><div><span class=v>${p.readDays}</span> <span class=l>天</span></div><div><span class=v>${fmtDur2(p.dayAverage)}</span> <span class=l>日均</span></div>${cmpTxt}</div>${(p.readStat&&p.readStat.length)?`<div class=chips style=margin-top:12px>${p.readStat.map(s=>`<span class=chip>${esc(s.stat)} ${esc(s.counts)}</span>`).join('')}</div>`:''}</div>`;
@@ -719,7 +769,7 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  const avail=PMAP.filter(([k])=>d.periods&&d.periods[k]);
  let curP=(avail.find(([k])=>k==='overall')||avail[0]||['overall'])[0];
  const pseg=`<div class=seg id=pseg>${avail.map(([k,l])=>`<button data-p='${k}' type=button class='${k===curP?'on':''}'>${l}</button>`).join('')}</div>`;
- sec.className='';sec.innerHTML=`${hm}<div class=pbar style='margin-top:14px'>${pseg}</div><div id=pblock></div><p style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>标题旁会标注数据来源；微信读书接口来自微信读书阅读统计快照，本地计算来自本机数据库里的划线 / 想法时间。热力图始终按全部划线日期展示，不随周期切换；若某周期没有对应字段则显示为空。</p>`;
+ sec.className='';sec.innerHTML=`${hm}<div class=pbar style='margin-top:14px'>${pseg}</div><div id=pblock></div><p style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>标题旁会标注数据来源；微信读书接口来自阅读统计快照，划线时间估算用于接口缺少时段分布 / 常读作者时的近似值，本地计算来自本机数据库里的划线 / 想法时间。热力图始终按全部划线日期展示，不随周期切换。</p>`;
  const fillP=()=>{e('pblock').innerHTML=renderPeriod(d.periods[curP],curP,charts,d.sessions);const top=((d.periods[curP]||{}).categories||[])[0];e('stats-word').textContent=top&&top.title?(PWORD[curP]||(c=>c))(top.title):''};
  document.querySelectorAll('#pseg button').forEach(btn=>btn.onclick=()=>{curP=btn.dataset.p;document.querySelectorAll('#pseg button').forEach(x=>x.classList.toggle('on',x===btn));fillP()});
  fillP();
