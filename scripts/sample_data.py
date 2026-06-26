@@ -50,6 +50,11 @@ FALLBACK_BOOKS = [
 ]
 
 
+# book_id -> 真实书封 URL（来自 sample-books.json 的 cover 字段；详情页演示书 sample-001
+# 是虚构书，没有真实书封，留空走渐变占位）。由 load_books() 填充。
+COVERS: dict[str, str] = {}
+
+
 def load_books() -> list[tuple[str, str, str, str, str, str, int, int]]:
     if not BOOK_SEED_PATH.exists():
         return FALLBACK_BOOKS
@@ -65,12 +70,15 @@ def load_books() -> list[tuple[str, str, str, str, str, str, int, int]]:
         # sample-001 是详情页演示书：它的章节/划线/想法是手写的固定内容
         # （讲“保存阅读现场 / 本地优先 / 与 AI 协作”），所以标题也要对得上，
         # 否则会出现“塔勒布的书里讲本地优先”这种穿帮。
+        book_id = f"sample-{index:03d}"
         if index == 1:
             title, author, category = "重读：把划线存进自己的数据库", "林小满", "工具与效率-效率"
             progress, notes = 92, 4
+        elif item.get("cover"):
+            COVERS[book_id] = str(item["cover"])
         books.append(
             (
-                f"sample-{index:03d}",
+                book_id,
                 title,
                 author,
                 category,
@@ -177,7 +185,7 @@ def create_sample_db(path: Path) -> None:
                     book_id,
                     title,
                     author,
-                    "",
+                    COVERS.get(book_id, ""),
                     "这是一条为截图准备的虚构书籍简介，用来展示 WeRead Vault 如何归档书籍、划线、想法和阅读统计。",
                     category,
                     notes,
