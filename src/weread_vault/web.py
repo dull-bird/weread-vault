@@ -690,17 +690,17 @@ function sessPanel(s){if(!s||!s.distribution)return'';
  return `<div class=panel><h3>单次阅读时长分布（碎片化） <span class=src>本地计算</span></h3>${s.verdict?`<div class=verdict>${esc(s.verdict)}</div>`:''}${s.distribution.map(x=>`<div class=hbar><span class=nm>${esc(x.label)}</span><span class=tk><i style="width:${(x.count/mx*100).toFixed(0)}%"></i></span><span class=vv>${x.count} 次</span></div>`).join('')}<div style='font-size:11px;color:var(--muted);margin-top:10px'>据划线时间推断的阅读会话（${s.total} 次）；纯阅读未划线的部分不计入，仅供参考。</div></div>`;}
 function periodLabel(key){return ({weekly:'本周',monthly:'本月',annually:'今年',overall:'总体'}[key]||'当前周期')}
 function timePanel(p,key){const vals=p.preferTime||[];
- if(!vals.length)return `<div class=panel><h3>时段分布（${periodLabel(key)}） <span class=src>官方接口</span></h3><div class=note-empty style='padding:18px;text-align:left'>本周期暂无时段分布数据。</div></div>`;
- return `<div class=panel><h3>时段分布（${periodLabel(key)}）${p.preferTimeWord?` · ${esc(p.preferTimeWord)}`:''} <span class=src>官方接口</span></h3>${barChart(vals.map((v,i)=>({label:i+'时',tick:i%6===0?i:'',value:v})),{h:150})}</div>`}
+ if(!vals.length)return `<div class=panel><h3>时段分布（${periodLabel(key)}） <span class=src>微信读书接口</span></h3><div class=note-empty style='padding:18px;text-align:left'>本周期暂无时段分布数据。</div></div>`;
+ return `<div class=panel><h3>时段分布（${periodLabel(key)}）${p.preferTimeWord?` · ${esc(p.preferTimeWord)}`:''} <span class=src>微信读书接口</span></h3>${barChart(vals.map((v,i)=>({label:i+'时',tick:i%6===0?i:'',value:v})),{h:150})}</div>`}
 function authorPanel(p,key){const authors=p.authors||[];
- if(!authors.length)return `<div class=panel><h3>常读作者 Top（${periodLabel(key)}） <span class=src>官方接口</span></h3><div class=note-empty style='padding:18px;text-align:left'>本周期暂无常读作者数据。</div></div>`;
- return `<div class=panel><h3>常读作者 Top（${periodLabel(key)}） <span class=src>官方接口</span></h3>${authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`}
+ if(!authors.length)return `<div class=panel><h3>常读作者 Top（${periodLabel(key)}） <span class=src>微信读书接口</span></h3><div class=note-empty style='padding:18px;text-align:left'>本周期暂无常读作者数据。</div></div>`;
+ return `<div class=panel><h3>常读作者 Top（${periodLabel(key)}） <span class=src>微信读书接口</span></h3>${authors.map(a=>`<div class=hbar><span class=nm style='flex:1;width:auto'>${esc(a.name||'')}</span><span class=vv style='width:auto;white-space:nowrap'>${esc(a.readTime||'')} · ${a.count}本</span></div>`).join('')}</div>`}
 function renderPeriod(p,key,charts,sessions){if(!p)return'<div class=note-empty>该周期暂无数据。</div>';
  const cmp=p.compare,cmpTxt=(cmp==null)?'':`<span class='cmp ${cmp>=0?'up':'down'}'>较上个周期 ${cmp>=0?'↑':'↓'} ${Math.abs(Math.round(cmp*100))}%</span>`;
- const head=`<div class=panel><h3>阅读概览 <span class=src>官方接口</span></h3><div class=big><div><span class=v>${fmtDur2(p.totalReadTime)}</span> <span class=l>时长</span></div><div><span class=v>${p.readDays}</span> <span class=l>天</span></div><div><span class=v>${fmtDur2(p.dayAverage)}</span> <span class=l>日均</span></div>${cmpTxt}</div>${(p.readStat&&p.readStat.length)?`<div class=chips style=margin-top:12px>${p.readStat.map(s=>`<span class=chip>${esc(s.stat)} ${esc(s.counts)}</span>`).join('')}</div>`:''}</div>`;
- const lead=p.longest.length?`<div class=panel><h3>读得最多 <span class=src>官方接口</span></h3>${p.longest.map((x,i)=>`<div class=lead><span class=rk>${i+1}</span><div class=li><div class=lt>${esc(x.title||'')}</div><div class=la>${esc(x.author||'')}</div></div><span class=lv>${fmtDur2(x.readSeconds)}</span></div>`).join('')}</div>`:'';
+ const head=`<div class=panel><h3>阅读概览 <span class=src>微信读书接口</span></h3><div class=big><div><span class=v>${fmtDur2(p.totalReadTime)}</span> <span class=l>时长</span></div><div><span class=v>${p.readDays}</span> <span class=l>天</span></div><div><span class=v>${fmtDur2(p.dayAverage)}</span> <span class=l>日均</span></div>${cmpTxt}</div>${(p.readStat&&p.readStat.length)?`<div class=chips style=margin-top:12px>${p.readStat.map(s=>`<span class=chip>${esc(s.stat)} ${esc(s.counts)}</span>`).join('')}</div>`:''}</div>`;
+ const lead=p.longest.length?`<div class=panel><h3>读得最多 <span class=src>微信读书接口</span></h3>${p.longest.map((x,i)=>`<div class=lead><span class=rk>${i+1}</span><div class=li><div class=lt>${esc(x.title||'')}</div><div class=la>${esc(x.author||'')}</div></div><span class=lv>${fmtDur2(x.readSeconds)}</span></div>`).join('')}</div>`:'';
  const ccm=Math.max(1,...p.categories.map(c=>c.seconds||0));
- const cats=p.categories.length?`<div class=panel><h3>阅读偏好 <span class=src>官方接口</span></h3>${p.categories.map(c=>`<div class=hbar><span class=nm>${esc(c.title||'')}</span><span class=tk><i style="width:${(c.seconds/ccm*100).toFixed(0)}%"></i></span><span class=vv>${c.count}本 · ${fmtDur2(c.seconds)}</span></div>`).join('')}</div>`:'';
+ const cats=p.categories.length?`<div class=panel><h3>阅读偏好 <span class=src>微信读书接口</span></h3>${p.categories.map(c=>`<div class=hbar><span class=nm>${esc(c.title||'')}</span><span class=tk><i style="width:${(c.seconds/ccm*100).toFixed(0)}%"></i></span><span class=vv>${c.count}本 · ${fmtDur2(c.seconds)}</span></div>`).join('')}</div>`:'';
  const sp=sessPanel(sessions&&sessions[key]);
  const time=timePanel(p,key),auth=authorPanel(p,key);
  return head+(charts[key]||'')+((time||auth)?`<div class=stats-grid>${time}${auth}</div>`:'')+((lead||cats)?`<div class=stats-grid>${lead}${cats}</div>`:'')+(sp?`<div style='margin-top:14px'>${sp}</div>`:'');}
@@ -708,9 +708,9 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  if(!d.hasData){sec.className='empty';sec.innerHTML='暂无统计数据，先到「同步设置」同步一次。';return}
  const o=d.overall;
  const PWORD={weekly:c=>`这周在读 ${c}`,monthly:c=>`这个月偏爱 ${c}`,annually:c=>`今年读得最多的是 ${c}`,overall:c=>`一直最常读 ${c}`};
- const charts={monthly:(d.byDayMonth&&d.byDayMonth.length)?`<div class=panel><h3>本月每日时长 <span class=src>官方接口</span></h3>${barChart(d.byDayMonth.map(x=>({label:x.label,tick:x.label.slice(3),value:x.seconds})),{h:130})}</div>`:'',
-  annually:(d.byMonth&&d.byMonth.length)?`<div class=panel><h3>本年每月时长 <span class=src>官方接口</span></h3>${barChart(d.byMonth.map(m=>({label:m.label+'月',tick:m.label,value:m.seconds})),{h:130})}</div>`:'',
-  overall:(o.byYear&&o.byYear.length)?`<div class=panel><h3>按年阅读时长 <span class=src>官方接口</span></h3>${barChart(o.byYear.map(y=>({label:y.label,tick:y.label,value:y.seconds})),{h:130})}</div>`:'',weekly:''};
+ const charts={monthly:(d.byDayMonth&&d.byDayMonth.length)?`<div class=panel><h3>本月每日时长 <span class=src>微信读书接口</span></h3>${barChart(d.byDayMonth.map(x=>({label:x.label,tick:x.label.slice(3),value:x.seconds})),{h:130})}</div>`:'',
+  annually:(d.byMonth&&d.byMonth.length)?`<div class=panel><h3>本年每月时长 <span class=src>微信读书接口</span></h3>${barChart(d.byMonth.map(m=>({label:m.label+'月',tick:m.label,value:m.seconds})),{h:130})}</div>`:'',
+  overall:(o.byYear&&o.byYear.length)?`<div class=panel><h3>按年阅读时长 <span class=src>微信读书接口</span></h3>${barChart(o.byYear.map(y=>({label:y.label,tick:y.label,value:y.seconds})),{h:130})}</div>`:'',weekly:''};
  const heat=d.heatmap||{};const years=[...new Set(Object.keys(heat).map(k=>k.slice(0,4)))].sort().reverse();
  const curY=years[0]||String(new Date().getFullYear());
  const ysel=years.map(y=>`<option value=${y}${y===curY?' selected':''}>${y}</option>`).join('');
@@ -719,7 +719,7 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  const avail=PMAP.filter(([k])=>d.periods&&d.periods[k]);
  let curP=(avail.find(([k])=>k==='overall')||avail[0]||['overall'])[0];
  const pseg=`<div class=seg id=pseg>${avail.map(([k,l])=>`<button data-p='${k}' type=button class='${k===curP?'on':''}'>${l}</button>`).join('')}</div>`;
- sec.className='';sec.innerHTML=`${hm}<div class=pbar style='margin-top:14px'>${pseg}</div><div id=pblock></div><p style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>标题旁会标注数据来源；官方接口来自微信读书阅读统计快照，本地计算来自本机数据库里的划线 / 想法时间。热力图始终按全部划线日期展示，不随周期切换；若某周期没有对应字段则显示为空。</p>`;
+ sec.className='';sec.innerHTML=`${hm}<div class=pbar style='margin-top:14px'>${pseg}</div><div id=pblock></div><p style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>标题旁会标注数据来源；微信读书接口来自微信读书阅读统计快照，本地计算来自本机数据库里的划线 / 想法时间。热力图始终按全部划线日期展示，不随周期切换；若某周期没有对应字段则显示为空。</p>`;
  const fillP=()=>{e('pblock').innerHTML=renderPeriod(d.periods[curP],curP,charts,d.sessions);const top=((d.periods[curP]||{}).categories||[])[0];e('stats-word').textContent=top&&top.title?(PWORD[curP]||(c=>c))(top.title):''};
  document.querySelectorAll('#pseg button').forEach(btn=>btn.onclick=()=>{curP=btn.dataset.p;document.querySelectorAll('#pseg button').forEach(x=>x.classList.toggle('on',x===btn));fillP()});
  fillP();
