@@ -21,14 +21,14 @@
 **最简单：下载安装包，无需 git clone。** 到 [Releases](https://github.com/dull-bird/weread-vault/releases/latest) 下载：
 
 - **macOS**：`weread-vault-macos.dmg` —— 打开后把 `WeRead Vault.app` 拖进「应用程序」，双击启动。
-- **Windows**：`weread-vault.exe` —— 双击启动；放进 PATH 后命令名也是 `weread-vault`。
+- **Windows**：`weread-vault-windows-setup.exe` —— 安装到用户目录并自动把 `weread-vault` 注册到 PATH；也提供 `weread-vault.exe` portable 版。
 - **Linux**：直接用下面的 `pipx` / `uvx` 命令行方式，功能一样。
 
 启动后浏览器自动打开，在「同步设置」粘贴微信读书 API Key（[从这里获取](https://weread.qq.com/r/weread-skills)），点「同步」即可。
 
 > 首次打开系统会提示「未签名」（没做付费签名公证，正常现象）：macOS 右键 App →「打开」→「打开」；Windows 点「更多信息」→「仍要运行」。一次即可。
 >
-> 想在终端也用 `weread-vault` 命令？macOS 用户可在 App 网页的「同步设置」里点「注册 weread-vault 命令」一键链接到 PATH（无需 sudo），或直接用下面的 pipx / uvx。
+> 想在终端也用 `weread-vault` 命令？Windows 安装包会自动注册；macOS 用户可在 App 网页的「同步设置」里点「注册 weread-vault 命令」一键链接到 PATH（无需 sudo），或直接用下面的 pipx / uvx。
 
 **命令行**（macOS / Windows / Linux，需 Python 3.10+）：
 

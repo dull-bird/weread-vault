@@ -89,7 +89,7 @@ def install_cli() -> dict[str, object]:
     if not getattr(sys, "frozen", False):
         raise ValueError("当前是源码 / pip 版，weread-vault 命令已经可用，无需安装。")
     if platform.system() != "Darwin":
-        raise ValueError("一键注册暂仅支持 macOS；Windows 请把 exe 放进 PATH 目录，或用 pipx 安装。")
+        raise ValueError("一键注册暂仅支持 macOS；Windows 请使用安装包自动注册 PATH，或用 pipx 安装。")
     target_dir = _cli_link_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
     link = target_dir / "weread-vault"
@@ -713,7 +713,7 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
 async function loadCli(){const box=e('cli-box');let s;try{s=await fetch('/api/cli-status').then(r=>r.json())}catch(_){box.innerHTML='';return}
  if(!s.frozen){box.innerHTML='';return}
  if(s.installed){box.innerHTML="<div class=clibox><b>命令行已就绪 ✓</b><p class=dzhint>终端里可直接用 <code>weread-vault</code>（sync / 导出 / update 等）。如果提示找不到命令，打开一个新终端再试。</p></div>";return}
- if(!s.supported){box.innerHTML="<div class=clibox><b>命令行</b><p class=dzhint>想在终端用 <code>weread-vault</code>：把本程序放进 PATH 目录，或 <code>pipx install weread-vault</code>。</p></div>";return}
+ if(!s.supported){box.innerHTML="<div class=clibox><b>命令行</b><p class=dzhint>想在终端用 <code>weread-vault</code>：Windows 请优先使用安装包（会自动注册 PATH），其他情况可用 <code>pipx install weread-vault</code>。</p></div>";return}
  box.innerHTML="<div class=clibox><b>把命令行装到终端</b><p class=dzhint>桌面 App 默认只是图形界面、不会注册命令行。点下面按钮，把 <code>weread-vault</code> 命令链接到系统 PATH（~/.local/bin 或 /usr/local/bin，无需 sudo），之后在终端就能跑 sync、导出、update。</p><div class=dzrow><button id='install-cli' class='ghost' type='button'>注册 weread-vault 命令</button><span id='cli-msg' class='msg'></span></div></div>";
  e('install-cli').onclick=async()=>{const m=e('cli-msg');m.className='msg';m.textContent='安装中…';try{let r=await fetch('/api/install-cli',{method:'POST'});let b=await r.json();if(!r.ok)throw new Error(b.error||'失败');m.className='msg ok';m.textContent='已注册到 '+b.path+'。打开一个新终端即可用 weread-vault。';setTimeout(loadCli,1600)}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};}
 loadSettings();load();loadStats();loadCli();</script></body></html>""".encode("utf-8")

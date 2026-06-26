@@ -63,7 +63,9 @@ def _check_update(download: bool = False) -> None:
     key = "macos" if system == "darwin" else "windows" if system.startswith("win") else "linux"
     assets = data.get("assets") or []
     if key == "windows":
-        asset = next((a for a in assets if (a.get("name") or "").lower() == "weread-vault.exe"), None)
+        asset = next((a for a in assets if (a.get("name") or "").lower() == "weread-vault-windows-setup.exe"), None)
+        asset = asset or next((a for a in assets if "setup" in (a.get("name") or "").lower()), None)
+        asset = asset or next((a for a in assets if (a.get("name") or "").lower() == "weread-vault.exe"), None)
         asset = asset or next((a for a in assets if (a.get("name") or "").lower().endswith(".exe")), None)
     elif key == "macos":
         asset = next((a for a in assets if (a.get("name") or "").lower().endswith(".dmg")), None)
