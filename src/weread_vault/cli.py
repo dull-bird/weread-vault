@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +30,55 @@ def _emit_json(obj: object) -> None:
 _RELEASES_API = "https://api.github.com/repos/dull-bird/weread-vault/releases/latest"
 
 
+def _curl(args: list[str]) -> bytes:
+    try:
+        return subprocess.check_output(["curl", "-fsSL", *args], stderr=subprocess.STDOUT, timeout=30)
+    except FileNotFoundError as error:
+        raise WereadVaultError("当前 Python 不支持 HTTPS，且找不到 curl；请用带 SSL 的 Python 运行，或安装 curl。") from error
+    except subprocess.CalledProcessError as error:
+        detail = error.output.decode("utf-8", "replace").strip()
+        raise WereadVaultError(f"curl 请求失败：{detail or error}") from error
+    except subprocess.TimeoutExpired as error:
+        raise WereadVaultError("curl 请求超时。") from error
+
+
+def _fetch_json(url: str) -> dict[str, object]:
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(
+        url, headers={"Accept": "application/vnd.github+json", "User-Agent": "weread-vault"})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            print("还没有发布版本（仓库尚无 Release）。")
+            return {}
+        raise WereadVaultError(f"检查更新失败：{error}") from error
+    except urllib.error.URLError as error:
+        if "unknown url type: https" not in str(error):
+            raise WereadVaultError(f"检查更新失败：{error}") from error
+        # Some self-managed Python builds omit _ssl. urllib then has no HTTPS
+        # handler at all. Fall back to curl when available so `update` remains
+        # usable from that environment.
+        return json.loads(_curl(["-H", "Accept: application/vnd.github+json", "-H", "User-Agent: weread-vault", url]).decode("utf-8"))
+    except Exception as error:  # noqa: BLE001 — network/JSON, surfaced as a friendly message
+        raise WereadVaultError(f"检查更新失败：{error}") from error
+
+
+def _download(url: str, output: str) -> None:
+    import urllib.error
+    import urllib.request
+
+    try:
+        urllib.request.urlretrieve(url, output)
+    except urllib.error.URLError as error:
+        if "unknown url type: https" not in str(error):
+            raise WereadVaultError(f"下载安装包失败：{error}") from error
+        _curl(["-o", output, url])
+
+
 def _version_tuple(value: str) -> tuple[int, ...]:
     import re
     return tuple(int(part) for part in re.findall(r"\d+", value)) or (0,)
@@ -36,21 +86,10 @@ def _version_tuple(value: str) -> tuple[int, ...]:
 
 def _check_update(download: bool = False) -> None:
     import platform
-    import urllib.error
-    import urllib.request
 
-    request = urllib.request.Request(
-        _RELEASES_API, headers={"Accept": "application/vnd.github+json", "User-Agent": "weread-vault"})
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
-        if error.code == 404:
-            print("还没有发布版本（仓库尚无 Release）。")
-            return
-        raise WereadVaultError(f"检查更新失败：{error}") from error
-    except Exception as error:  # noqa: BLE001 — network/JSON, surfaced as a friendly message
-        raise WereadVaultError(f"检查更新失败：{error}") from error
+    data = _fetch_json(_RELEASES_API)
+    if not data:
+        return
     latest = (data.get("tag_name") or "").lstrip("v")
     if not latest:
         print("还没有发布版本。")
@@ -73,7 +112,7 @@ def _check_update(download: bool = False) -> None:
     else:
         asset = next((a for a in assets if "linux" in (a.get("name") or "").lower()), None)
     if asset and download:
-        urllib.request.urlretrieve(asset["browser_download_url"], asset["name"])
+        _download(asset["browser_download_url"], asset["name"])
         print(f"已下载安装包：{asset['name']}")
     elif asset:
         print(f"下载（{key}）：{asset['browser_download_url']}")

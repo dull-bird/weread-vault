@@ -313,7 +313,7 @@ h1{margin:0;font-size:27px;letter-spacing:-.02em;font-weight:700}.dot{color:var(
 section{margin-top:30px}h2{margin:0 0 18px;font-size:17px;font-weight:650;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}h2 .n{color:var(--muted);font-weight:450;font-size:13px}
 form{display:flex;gap:8px}input{flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font:inherit;color:var(--fg)}input:focus{outline:2px solid var(--brand);outline-offset:-1px;border-color:transparent}
 button{border:0;border-radius:10px;background:var(--brand);color:#fff;padding:11px 18px;font:inherit;font-weight:550;cursor:pointer;transition:filter .15s,transform .05s}button:hover{filter:brightness(1.07)}button:active{transform:translateY(.5px)}
-button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex;align-items:center;gap:10px;margin:-10px 0 26px;flex-wrap:wrap}.hint{color:var(--muted);font-size:13px}.msg{font-size:13px}.msg.ok{color:#059669}.msg.err{color:#dc2626}.msg.warn{color:#b45309;line-height:1.5}.keybox{display:none;align-items:center;gap:8px;flex-wrap:wrap;width:100%}.keybox input{max-width:380px}.ghost{background:transparent;color:var(--brand);border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line))}
+button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex;align-items:center;gap:10px;margin:-10px 0 26px;flex-wrap:wrap}.actions>.msg{flex:1 1 220px;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hint{color:var(--muted);font-size:13px}.msg{font-size:13px}.msg.ok{color:#059669}.msg.err{color:#dc2626}.msg.warn{color:#b45309;line-height:1.5}.keybox{display:none;align-items:center;gap:8px;flex-wrap:wrap;width:100%}.keybox input{max-width:380px}.ghost{background:transparent;color:var(--brand);border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line))}
 .clibox{margin-top:26px;border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}.clibox b{font-size:14px}.clibox code{background:var(--bg);padding:1px 5px;border-radius:5px}
 .skillbox{margin-top:26px;border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}.skillbox h3{margin:0 0 8px;font-size:14px;font-weight:600}.skillbox code{background:var(--bg);padding:1px 5px;border-radius:5px;font-size:12px}.skillbox a{font-weight:500}
 .cprow{position:relative;margin:10px 0}.cprow pre{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin:0;overflow:auto;font-size:12.5px;line-height:1.6;white-space:pre-wrap}.cprow .copyp{position:absolute;top:8px;right:8px;font-size:12px;padding:4px 10px}
@@ -547,8 +547,9 @@ e('save-key').onclick=async()=>{const key=e('api-key').value.trim(),msg=e('sync-
 e('change-key').onclick=async()=>{const m=e('dz-msg');try{await fetch('/api/settings/clear-key',{method:'POST'});m.className='msg ok';m.textContent='已清除 API Key，可在上方重新粘贴新的 Key。';await loadSettings()}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};
 e('reset-data').onclick=async()=>{if(!confirm('确定清空本机全部阅读数据？书目 / 划线 / 想法 / 统计都会删除（API Key 保留）。此操作不可撤销。'))return;const m=e('dz-msg');m.className='msg';m.textContent='清空中…';try{let r=await fetch('/api/reset',{method:'POST'});let bd=await r.json();if(!r.ok)throw new Error(bd.error||'失败');m.className='msg ok';m.textContent='已清空。重新同步即可拉取当前账号的数据。';await load();await loadStats();await loadSettings()}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};
 async function runSync(mode){const btns=[e('sync-btn'),e('full-btn'),e('popular-btn')],labels=btns.map(b=>b.textContent),msg=e('sync-msg'),prog=e('prog'),bar=prog.querySelector('i');
+ const setMsg=(cls,text)=>{msg.className=cls;msg.textContent=text;msg.title=text};
  const active={sync:0,full:1,popular:2}[mode];btns.forEach(b=>b.disabled=true);btns[active].textContent='同步中…';
- msg.className='msg';msg.textContent=mode==='popular'?'正在拉取他人热门划线…':'首次同步可能较慢，正在连接微信读书…';prog.className='prog show indet';bar.style.width='';
+ setMsg('msg',mode==='popular'?'正在拉取他人热门划线…':'首次同步可能较慢，正在连接微信读书…');prog.className='prog show indet';bar.style.width='';
  let result=null,warn='';
  try{
   const res=await fetch('/api/sync/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});
@@ -559,12 +560,12 @@ async function runSync(mode){const btns=[e('sync-btn'),e('full-btn'),e('popular-
     if(o.error)throw new Error(o.error);
     if(o.warning){warn=o.warning;continue}
     if(o.done){result=o.counts;continue}
-    if(o.line){msg.textContent=o.line;const m=o.line.match(/\[(\d+)\/(\d+)\]/);if(m&&+m[2]>0){prog.className='prog show';bar.style.width=Math.round(m[1]/m[2]*100)+'%'}}}}
+    if(o.line){setMsg('msg',o.line);const m=o.line.match(/\[(\d+)\/(\d+)\]/);if(m&&+m[2]>0){prog.className='prog show';bar.style.width=Math.round(m[1]/m[2]*100)+'%'}}}}
   prog.className='prog show';bar.style.width='100%';
-  if(warn){msg.className='msg warn';msg.textContent='⚠️ '+warn+'（已同步完成）';}
-  else{msg.className='msg ok';msg.textContent=mode==='popular'?`已同步 ${result?.popular??0} 本书的热门划线。导出加 --with-popular 即可合并。`:`同步完成：全书架 ${result?.shelf??0} 本（有笔记 ${result?.books??0} 本），本次更新笔记 ${result?.notes??0} 本，阅读统计已刷新。`;}
+  if(warn){setMsg('msg warn','⚠️ '+warn+'（已同步完成）');}
+  else{setMsg('msg ok',mode==='popular'?`已同步 ${result?.popular??0} 本书的热门划线。导出加 --with-popular 即可合并。`:`同步完成：全书架 ${result?.shelf??0} 本（有笔记 ${result?.books??0} 本），本次更新笔记 ${result?.notes??0} 本，阅读统计已刷新。`);}
   await load();await loadStats();await loadSettings();
- }catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}
+ }catch(err){setMsg('msg err',err.message||String(err))}
  finally{btns.forEach((b,i)=>{b.disabled=false;b.textContent=labels[i]});setTimeout(()=>{e('prog').className='prog'},1000)}}
 document.addEventListener('click',ev=>{const b=ev.target.closest('.copyp');if(!b)return;const pre=e(b.dataset.t);if(!pre)return;navigator.clipboard.writeText(pre.textContent).then(()=>{const o=b.textContent;b.textContent='已复制 ✓';setTimeout(()=>{b.textContent=o},1400)})});
 e('sync-btn').onclick=()=>runSync('sync');
