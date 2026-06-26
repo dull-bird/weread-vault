@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Deterministic fake WeRead data for docs and demos."""
+"""Deterministic privacy-safe WeRead sample data for docs and demos.
+
+Book titles/authors/categories may come from the committed sample seed; notes,
+thoughts, reading stats, progress, and activity are generated demo data.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,15 @@ sys.path.insert(0, str(ROOT / "src"))
 from weread_vault.db import initialize  # noqa: E402
 
 
-BOOKS = [
+BOOK_SEED_PATH = ROOT / "docs" / "sample-data" / "sample-books.json"
+COLOR_PAIRS = [
+    ("#2563eb", "#7c3aed"), ("#059669", "#14b8a6"), ("#dc2626", "#f97316"),
+    ("#9333ea", "#ec4899"), ("#0f766e", "#65a30d"), ("#0369a1", "#38bdf8"),
+    ("#ca8a04", "#f59e0b"), ("#db2777", "#fb7185"), ("#4f46e5", "#06b6d4"),
+    ("#475569", "#64748b"), ("#ea580c", "#facc15"), ("#16a34a", "#84cc16"),
+]
+
+FALLBACK_BOOKS = [
     ("sample-001", "星河笔记：在夜航中思考", "林小满", "工具与效率", "#2563eb", "#7c3aed", 87, 12),
     ("sample-002", "慢读花园", "周青禾", "文学随笔", "#059669", "#14b8a6", 64, 8),
     ("sample-003", "纸上城市漫游", "陈亦舟", "文学随笔", "#dc2626", "#f97316", 42, 5),
@@ -36,6 +48,33 @@ BOOKS = [
     ("sample-105", "笔记与边界", "林小满", "工具与效率", "#be123c", "#fb7185", 0, 0),
     ("sample-106", "每周读书实验", "林小满", "工具与效率", "#334155", "#94a3b8", 0, 0),
 ]
+
+
+def load_books() -> list[tuple[str, str, str, str, str, str, int, int]]:
+    if not BOOK_SEED_PATH.exists():
+        return FALLBACK_BOOKS
+    seeds = json.loads(BOOK_SEED_PATH.read_text(encoding="utf-8"))
+    books = []
+    for index, item in enumerate(seeds[:100], start=1):
+        color1, color2 = COLOR_PAIRS[(index - 1) % len(COLOR_PAIRS)]
+        progress = 100 if index <= 38 else max(8, 92 - (index * 7) % 84)
+        notes = 0 if index > 42 and index % 3 else 2 + (index * 5) % 17
+        books.append(
+            (
+                f"sample-{index:03d}",
+                str(item.get("title") or f"示例书 {index}"),
+                str(item.get("author") or "未知作者"),
+                str(item.get("category") or "未分类"),
+                color1,
+                color2,
+                progress,
+                notes,
+            )
+        )
+    return books or FALLBACK_BOOKS
+
+
+BOOKS = load_books()
 
 HIGHLIGHTS = [
     ("sample-001", 1, "序章 为什么要保存阅读现场", "真正重要的不是读过多少，而是那些被你反复想起的句子。", "2026-06-01", 5),
@@ -63,33 +102,34 @@ def ts(date: str) -> int:
 
 
 def stats_payload() -> dict[str, object]:
+    noted_books = [book for book in BOOKS if book[7] > 0] or BOOKS
     longest = [
-        {"book": {"title": "星河笔记：在夜航中思考", "author": "林小满"}, "readTime": 7400},
-        {"book": {"title": "慢读花园", "author": "周青禾"}, "readTime": 5200},
-        {"book": {"title": "清晨算法课", "author": "许明远"}, "readTime": 3900},
-        {"book": {"title": "灯下的长期主义", "author": "叶澜"}, "readTime": 2600},
+        {"book": {"title": book[1], "author": book[2]}, "readTime": max(900, 7800 - index * 620)}
+        for index, book in enumerate(noted_books[:8])
     ]
+    category_counts: dict[str, int] = {}
+    author_counts: dict[str, int] = {}
+    for _book_id, _title, author, category, *_rest in noted_books:
+        category_counts[category] = category_counts.get(category, 0) + 1
+        author_counts[author] = author_counts.get(author, 0) + 1
     categories = [
-        {"categoryTitle": "工具与效率", "readingTime": 15000, "readingCount": 8},
-        {"categoryTitle": "文学随笔", "readingTime": 9100, "readingCount": 7},
-        {"categoryTitle": "科学通识", "readingTime": 6300, "readingCount": 5},
-        {"categoryTitle": "心理成长", "readingTime": 4200, "readingCount": 4},
+        {"categoryTitle": title, "readingTime": 3600 + count * 2100, "readingCount": count}
+        for title, count in sorted(category_counts.items(), key=lambda item: (-item[1], item[0]))[:8]
+    ]
+    authors = [
+        {"name": name, "count": count, "readTime": f"{count} 次"}
+        for name, count in sorted(author_counts.items(), key=lambda item: (-item[1], item[0]))[:8]
     ]
     return {
-        "totalReadTime": 153000,
-        "readDays": 36,
+        "totalReadTime": 216000,
+        "readDays": 64,
         "readTimes": {"1735660800": 64800, "1767196800": 88200},
         "readLongest": longest,
         "preferCategory": categories,
-        "preferAuthor": [
-            {"name": "林小满", "count": 9, "readTime": "9 次"},
-            {"name": "周青禾", "count": 6, "readTime": "6 次"},
-            {"name": "陈亦舟", "count": 4, "readTime": "4 次"},
-            {"name": "顾南风", "count": 3, "readTime": "3 次"},
-        ],
+        "preferAuthor": authors,
         "preferTime": [0, 0, 0, 0, 0, 0, 1, 3, 5, 4, 3, 2, 2, 4, 6, 8, 7, 5, 4, 3, 2, 1, 0, 0],
-        "readStat": [{"stat": "读过", "counts": "24本"}],
-        "preferCategoryWord": "工具与效率",
+        "readStat": [{"stat": "读过", "counts": f"{len(BOOKS)}本"}],
+        "preferCategoryWord": categories[0]["categoryTitle"] if categories else "",
         "preferTimeWord": "傍晚阅读较多",
     }
 
@@ -160,6 +200,30 @@ def create_sample_db(path: Path) -> None:
                     now,
                 ),
             )
+        generated_index = len(HIGHLIGHTS) + 1
+        for index, (book_id, title, _author, _category, _color1, _color2, _progress, notes) in enumerate(BOOKS[1:48], start=1):
+            if notes <= 0:
+                continue
+            for n in range(1, min(3, notes // 6 + 1) + 1):
+                chapter_uid = n
+                created = ts("2026-06-01") + ((index * 3 + n * 2) % 24) * 3600 + (index % 21) * 86400
+                conn.execute(
+                    """INSERT INTO highlights(
+                      bookmark_id,book_id,chapter_uid,chapter_title,mark_text,text_range,color_style,create_time,updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (
+                        f"sample-highlight-{generated_index}",
+                        book_id,
+                        chapter_uid,
+                        f"第 {chapter_uid} 章",
+                        f"这是一条围绕《{title}》生成的虚构示例划线，用来演示本地检索和统计。",
+                        f"{chapter_uid * 100}-{chapter_uid * 100 + 20}",
+                        (index + n) % 5 + 1,
+                        created,
+                        now,
+                    ),
+                )
+                generated_index += 1
 
         conn.execute(
             """INSERT INTO thoughts(

@@ -216,6 +216,20 @@ def _estimated_authors(conn: sqlite3.Connection, since: int, until: int) -> list
     ]
 
 
+def _estimated_categories(conn: sqlite3.Connection, since: int, until: int) -> list[dict[str, object]]:
+    return [
+        {"title": row["category"] or "未分类", "count": int(row["books"] or 0), "seconds": int(row["marks"] or 0)}
+        for row in conn.execute(
+            """SELECT COALESCE(NULLIF(b.category,''),'未分类') AS category,
+            count(*) AS marks, count(DISTINCT h.book_id) AS books
+            FROM highlights h JOIN books b ON b.book_id=h.book_id
+            WHERE h.create_time IS NOT NULL AND h.create_time>=? AND h.create_time<?
+            GROUP BY category ORDER BY marks DESC, books DESC, category LIMIT 8""",
+            (since, until),
+        )
+    ]
+
+
 def _parse_period(payload: dict[str, object]) -> dict[str, object]:
     total = payload.get("totalReadTime", 0) or 0
     days = payload.get("readDays", 0) or 0
@@ -223,6 +237,10 @@ def _parse_period(payload: dict[str, object]) -> dict[str, object]:
     authors = [
         {"name": a.get("name"), "count": a.get("count", 0), "readTime": a.get("readTime", "")}
         for a in (payload.get("preferAuthor") or [])
+    ][:8]
+    categories = [
+        {"title": c.get("categoryTitle"), "count": c.get("readingCount", 0), "seconds": c.get("readingTime", 0)}
+        for c in (payload.get("preferCategory") or [])
     ][:8]
     return {
         "totalReadTime": total,
@@ -235,10 +253,8 @@ def _parse_period(payload: dict[str, object]) -> dict[str, object]:
              "readSeconds": i.get("readTime", 0)}
             for i in (payload.get("readLongest") or [])
         ][:8],
-        "categories": [
-            {"title": c.get("categoryTitle"), "count": c.get("readingCount", 0), "seconds": c.get("readingTime", 0)}
-            for c in (payload.get("preferCategory") or [])
-        ][:8],
+        "categories": categories,
+        "categoriesSource": "微信读书接口" if categories else "",
         "preferTime": prefer_time,
         "preferTimeWord": payload.get("preferTimeWord", ""),
         "preferTimeSource": "微信读书接口" if prefer_time else "",
@@ -301,6 +317,9 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
         if not period.get("authors"):
             period["authors"] = _estimated_authors(conn, since, now + 1)
             period["authorsSource"] = "划线时间估算"
+        if not period.get("categories"):
+            period["categories"] = _estimated_categories(conn, since, now + 1)
+            period["categoriesSource"] = "划线时间估算"
     # Fragmentation per period (from highlight timestamps within each window).
     sessions = {
         "weekly": _session_distribution(conn, since=starts["weekly"]),
@@ -750,7 +769,8 @@ function renderPeriod(p,key,charts,sessions){if(!p)return'<div class=note-empty>
  const head=`<div class=panel><h3>阅读概览 <span class=src>微信读书接口</span></h3><div class=big><div><span class=v>${fmtDur2(p.totalReadTime)}</span> <span class=l>时长</span></div><div><span class=v>${p.readDays}</span> <span class=l>天</span></div><div><span class=v>${fmtDur2(p.dayAverage)}</span> <span class=l>日均</span></div>${cmpTxt}</div>${(p.readStat&&p.readStat.length)?`<div class=chips style=margin-top:12px>${p.readStat.map(s=>`<span class=chip>${esc(s.stat)} ${esc(s.counts)}</span>`).join('')}</div>`:''}</div>`;
  const lead=p.longest.length?`<div class=panel><h3>读得最多 <span class=src>微信读书接口</span></h3>${p.longest.map((x,i)=>`<div class=lead><span class=rk>${i+1}</span><div class=li><div class=lt>${esc(x.title||'')}</div><div class=la>${esc(x.author||'')}</div></div><span class=lv>${fmtDur2(x.readSeconds)}</span></div>`).join('')}</div>`:'';
  const ccm=Math.max(1,...p.categories.map(c=>c.seconds||0));
- const cats=p.categories.length?`<div class=panel><h3>阅读偏好 <span class=src>微信读书接口</span></h3>${p.categories.map(c=>`<div class=hbar><span class=nm>${esc(c.title||'')}</span><span class=tk><i style="width:${(c.seconds/ccm*100).toFixed(0)}%"></i></span><span class=vv>${c.count}本 · ${fmtDur2(c.seconds)}</span></div>`).join('')}</div>`:'';
+ const catSrc=p.categoriesSource||'微信读书接口',catEst=catSrc==='划线时间估算';
+ const cats=p.categories.length?`<div class=panel><h3>阅读偏好 <span class=src>${esc(catSrc)}</span></h3>${p.categories.map(c=>`<div class=hbar><span class=nm>${esc(c.title||'')}</span><span class=tk><i style="width:${(c.seconds/ccm*100).toFixed(0)}%"></i></span><span class=vv style='width:${catEst?118:70}px;flex:0 0 ${catEst?118:70}px'>${catEst?`${c.seconds} 条划线 · ${c.count}本`:`${c.count}本 · ${fmtDur2(c.seconds)}`}</span></div>`).join('')}</div>`:`<div class=panel><h3>阅读偏好 <span class=src>${esc(catSrc)}</span></h3><div class=note-empty style='padding:18px;text-align:left'>本周期暂无阅读偏好数据。</div></div>`;
  const sp=sessPanel(sessions&&sessions[key]);
  const time=timePanel(p,key),auth=authorPanel(p,key);
  return head+(charts[key]||'')+((time||auth)?`<div class=stats-grid>${time}${auth}</div>`:'')+((lead||cats)?`<div class=stats-grid>${lead}${cats}</div>`:'')+(sp?`<div style='margin-top:14px'>${sp}</div>`:'');}
@@ -769,7 +789,7 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  const avail=PMAP.filter(([k])=>d.periods&&d.periods[k]);
  let curP=(avail.find(([k])=>k==='overall')||avail[0]||['overall'])[0];
  const pseg=`<div class=seg id=pseg>${avail.map(([k,l])=>`<button data-p='${k}' type=button class='${k===curP?'on':''}'>${l}</button>`).join('')}</div>`;
- sec.className='';sec.innerHTML=`${hm}<div class=pbar style='margin-top:14px'>${pseg}</div><div id=pblock></div><p style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>标题旁会标注数据来源；微信读书接口来自阅读统计快照，划线时间估算用于接口缺少时段分布 / 常读作者时的近似值，本地计算来自本机数据库里的划线 / 想法时间。热力图始终按全部划线日期展示，不随周期切换。</p>`;
+ sec.className='';sec.innerHTML=`${hm}<div class=pbar style='margin-top:14px'>${pseg}</div><div id=pblock></div><p style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>标题旁会标注数据来源；微信读书接口来自阅读统计快照，划线时间估算用于接口缺少阅读偏好 / 时段分布 / 常读作者时的近似值，本地计算来自本机数据库里的划线 / 想法时间。热力图始终按全部划线日期展示，不随周期切换。</p>`;
  const fillP=()=>{e('pblock').innerHTML=renderPeriod(d.periods[curP],curP,charts,d.sessions);const top=((d.periods[curP]||{}).categories||[])[0];e('stats-word').textContent=top&&top.title?(PWORD[curP]||(c=>c))(top.title):''};
  document.querySelectorAll('#pseg button').forEach(btn=>btn.onclick=()=>{curP=btn.dataset.p;document.querySelectorAll('#pseg button').forEach(x=>x.classList.toggle('on',x===btn));fillP()});
  fillP();

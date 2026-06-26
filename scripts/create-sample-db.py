@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a deterministic fake WeRead Vault SQLite database.
+"""Create a deterministic privacy-safe WeRead Vault sample SQLite database.
 
 Examples:
   python3 scripts/create-sample-db.py --db /tmp/weread-vault-sample.db

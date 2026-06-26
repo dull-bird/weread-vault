@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Generate privacy-safe sample screenshots for the docs.
 
-The screenshots are static marketing/docs assets, not exported from a real
-WeRead account. They are rendered from deterministic fake books, notes, and
-reading stats so the public site never exposes private reading history.
+The screenshots are static marketing/docs assets. They are rendered from a
+deterministic sample database: book metadata comes from the sample seed, while
+notes, thoughts, reading stats, progress, and activity are generated demo data
+so the public site never exposes private highlights or reading history.
 
 Requirements:
   - Google Chrome / Chromium available on PATH, or set CHROME=/path/to/chrome

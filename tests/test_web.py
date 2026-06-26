@@ -99,6 +99,9 @@ class WebTests(unittest.TestCase):
         self.assertEqual(weekly["authorsSource"], "划线时间估算")
         self.assertEqual(weekly["authors"][0]["name"], "Author")
         self.assertEqual(weekly["authors"][0]["readTime"], "1 条划线")
+        self.assertEqual(weekly["categoriesSource"], "划线时间估算")
+        self.assertEqual(weekly["categories"][0]["title"], "未分类")
+        self.assertEqual(weekly["categories"][0]["seconds"], 1)
 
     def test_stats_endpoint_reports_no_data_when_empty(self):
         self.assertEqual(self.get_json("/api/stats"), {"hasData": False})

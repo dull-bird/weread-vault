@@ -163,7 +163,7 @@ python -m unittest discover -s tests -v
 
 ### 重新生成文档示例截图
 
-`docs/assets/` 里的书架、笔记、统计截图使用虚构示例数据生成，不来自真实微信读书账号。虚拟数据源保存在 [`docs/sample-data/weread-vault-sample.sql`](docs/sample-data/weread-vault-sample.sql)，可在任意机器复现为 SQLite：
+`docs/assets/` 里的书架、笔记、统计截图使用示例数据生成，不包含真实划线、想法或阅读统计。书籍列表种子在 [`docs/sample-data/sample-books.json`](docs/sample-data/sample-books.json)，生成后的虚拟数据库 SQL 在 [`docs/sample-data/weread-vault-sample.sql`](docs/sample-data/weread-vault-sample.sql)，可在任意机器复现为 SQLite：
 
 ```bash
 python3 scripts/create-sample-db.py --db /tmp/weread-vault-sample.db
