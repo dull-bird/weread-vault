@@ -61,7 +61,15 @@ def _check_update(download: bool = False) -> None:
     print(f"发现新版本 {latest}（当前 {__version__}）。")
     system = platform.system().lower()
     key = "macos" if system == "darwin" else "windows" if system.startswith("win") else "linux"
-    asset = next((a for a in (data.get("assets") or []) if key in (a.get("name") or "").lower()), None)
+    assets = data.get("assets") or []
+    if key == "windows":
+        asset = next((a for a in assets if (a.get("name") or "").lower() == "weread-vault.exe"), None)
+        asset = asset or next((a for a in assets if (a.get("name") or "").lower().endswith(".exe")), None)
+    elif key == "macos":
+        asset = next((a for a in assets if (a.get("name") or "").lower().endswith(".dmg")), None)
+        asset = asset or next((a for a in assets if "macos" in (a.get("name") or "").lower()), None)
+    else:
+        asset = next((a for a in assets if "linux" in (a.get("name") or "").lower()), None)
     if asset and download:
         urllib.request.urlretrieve(asset["browser_download_url"], asset["name"])
         print(f"已下载安装包：{asset['name']}")

@@ -2,7 +2,7 @@
 
 Double-clicking the binary (no arguments) starts the local dashboard and opens the
 browser. Run it from a terminal with the usual subcommands for everything else, e.g.
-``weread-vault-macos sync`` or ``weread-vault-windows.exe update``.
+``weread-vault-macos sync`` or ``weread-vault.exe update``.
 """
 
 from __future__ import annotations

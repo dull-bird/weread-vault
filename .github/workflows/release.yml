@@ -34,7 +34,7 @@ jobs:
 
       - name: Build Windows .exe
         if: runner.os == 'Windows'
-        run: pyinstaller --onefile --name weread-vault-windows --collect-submodules weread_vault packaging/launch.py
+        run: pyinstaller --onefile --name weread-vault --collect-submodules weread_vault packaging/launch.py
 
       - name: Build macOS .app + .dmg (and a CLI binary)
         if: runner.os == 'macOS'
@@ -51,7 +51,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/weread-vault-windows.exe
+            dist/weread-vault.exe
             dist/weread-vault-macos
             dist/weread-vault-macos.dmg
 
@@ -60,7 +60,7 @@ jobs:
         with:
           name: build-${{ matrix.os }}
           path: |
-            dist/weread-vault-windows.exe
+            dist/weread-vault.exe
             dist/weread-vault-macos
             dist/weread-vault-macos.dmg
           if-no-files-found: ignore

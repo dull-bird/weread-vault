@@ -21,7 +21,7 @@
 **最简单：下载安装包，无需 git clone。** 到 [Releases](https://github.com/dull-bird/weread-vault/releases/latest) 下载：
 
 - **macOS**：`weread-vault-macos.dmg` —— 打开后把 `WeRead Vault.app` 拖进「应用程序」，双击启动。
-- **Windows**：`weread-vault-windows.exe` —— 双击启动。
+- **Windows**：`weread-vault.exe` —— 双击启动；放进 PATH 后命令名也是 `weread-vault`。
 - **Linux**：直接用下面的 `pipx` / `uvx` 命令行方式，功能一样。
 
 启动后浏览器自动打开，在「同步设置」粘贴微信读书 API Key（[从这里获取](https://weread.qq.com/r/weread-skills)），点「同步」即可。
