@@ -401,6 +401,10 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .dz{margin-top:24px;border:1px solid color-mix(in srgb,#dc2626 22%,var(--line));border-radius:var(--radius);padding:16px 18px}
 .dz h3{margin:0 0 8px;font-size:14px;font-weight:600}.dzhint{font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.65}.dzhint code{background:var(--bg);padding:1px 5px;border-radius:5px}
 .dzrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.xin{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font:inherit;color:var(--fg);min-width:0}
+.xrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+.xrow .xt{font-weight:600;font-size:13px;min-width:104px}
+.xrow .xck{font-size:12px;color:var(--muted);display:inline-flex;gap:5px;align-items:center}
 .danger{background:transparent;color:#dc2626;border:1px solid color-mix(in srgb,#dc2626 40%,var(--line))}.danger:hover{background:color-mix(in srgb,#dc2626 10%,transparent);filter:none}
 .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
 .toolbar select{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 11px;font:inherit;font-size:13px;color:var(--fg);cursor:pointer}
@@ -543,6 +547,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <p class='sub'>「同步」会先拉取全书架，再增量同步有变更的笔记，并追加阅读统计。首次可能较慢。API Key 仅保存到本机私有配置，不会上传。</p>
 <div id='cli-box'></div>
 <div id='sched-box'></div>
+<div id='export-box'></div>
 <div class='skillbox'>
 <h3>接入 AI · 安装 Skill</h3>
 <p class='dzhint'>把 WeRead Vault 的 Skill 装进你的 AI agent（Claude Code / Codex / OpenClaw），就能用自然语言查阅读数据、按主题荐书、随时同步。把下面这段发给你的 agent：</p>
@@ -817,7 +822,18 @@ async function loadSchedule(){const box=e('sched-box');let s;try{s=await fetch('
   e('sched-off').onclick=async()=>{const m=e('sched-msg');m.className='msg';m.textContent='处理中…';try{let r=await fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({off:true})});if(!r.ok)throw new Error((await r.json()).error||'失败');loadSchedule()}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};return}
  box.innerHTML=`<div class=clibox><b>每天自动同步</b><p class=dzhint>开启后，系统定时器会每天到点自动跑一次同步（不常驻、不占后台、关机重开照常）。${esc(s.platform||'')}</p><div class=dzrow><input id='sched-time' type='time' value='07:00' style='background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font:inherit;color:var(--fg)'><button id='sched-on' class='ghost' type='button'>开启每天自动同步</button><span id='sched-msg' class='msg'></span></div></div>`;
  e('sched-on').onclick=async()=>{const m=e('sched-msg');m.className='msg';m.textContent='设置中…';try{let r=await fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({time:e('sched-time').value})});let b=await r.json();if(!r.ok)throw new Error(b.error||'失败');if(b.warning){m.className='msg warn';m.textContent='已开启，但 '+b.warning}else{m.className='msg ok';m.textContent='已开启每天 '+b.time+' 自动同步。'}setTimeout(loadSchedule,1400)}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};}
-async function boot(){await loadSettings();await load();await loadStats();await loadCli();await loadSchedule();const v=PARAMS.get('view');if(v)showView(v);const bid=PARAMS.get('book');if(bid)await openBook(bid,null,PARAMS.get('tab'));document.body.dataset.ready='1'}
+async function loadExport(){const box=e('export-box');let s;try{s=await fetch('/api/export-status').then(r=>r.json())}catch(_){box.innerHTML='';return}
+ const n=s.books_with_notes||0;
+ box.innerHTML=`<div class=clibox><b>导出 · 批量同步到其它工具</b><p class=dzhint>把 ${n} 本有笔记的书一次性导出。每条划线、想法都带书名与章节；可重复运行，已存在的内容会增量更新。</p>
+ <div class=xrow><span class=xt>📝 Markdown</span><input id='x-md' class='xin' style='flex:1' placeholder='导出目录，如 ~/Documents/Obsidian/微信读书' value="${esc(s.markdown_dir||'')}"><label class=xck><input type='checkbox' id='x-md-pop'>合并热门划线</label><button id='x-md-go' class='ghost' type='button'>导出</button></div>
+ <div class=xrow><span class=xt>🔖 flomo</span><input id='x-flomo' class='xin' style='flex:1' type='password' autocomplete='off' placeholder="${s.flomo_saved?'已保存（留空沿用）':'flomo 的 API / Webhook'}"><label class=xck><input type='checkbox' id='x-flomo-save' ${s.flomo_saved?'checked':''}>记住</label><button id='x-flomo-go' class='ghost' type='button'>导出到 flomo</button></div>
+ <div class=xrow><span class=xt>🗂 Notion</span><input id='x-nt-token' class='xin' style='flex:1' type='password' autocomplete='off' placeholder="${s.notion_saved?'token 已保存（留空沿用）':'集成 token'}"><input id='x-nt-db' class='xin' style='width:150px' placeholder='数据库 ID'><label class=xck><input type='checkbox' id='x-nt-save' ${s.notion_saved?'checked':''}>记住</label><button id='x-nt-go' class='ghost' type='button'>导出到 Notion</button></div>
+ <div class=dzrow style='margin-top:10px'><span id='x-msg' class='msg'></span></div></div>`;
+ const msg=e('x-msg');const run=async(btn,target,payload)=>{const old=btn.textContent;btn.disabled=true;btn.textContent='导出中…';msg.className='msg';msg.textContent='正在导出，请稍候（书多时较慢）…';try{let r=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target,...payload})});let b=await r.json();if(!r.ok)throw new Error(b.error||'失败');msg.className='msg ok';msg.textContent=`✓ 导出完成，共 ${b.count} 本`+(b.dir?`，已写入 ${b.dir}`:'。');}catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}finally{btn.disabled=false;btn.textContent=old}};
+ e('x-md-go').onclick=()=>run(e('x-md-go'),'markdown',{dir:e('x-md').value,with_popular:e('x-md-pop').checked});
+ e('x-flomo-go').onclick=()=>run(e('x-flomo-go'),'flomo',{webhook:e('x-flomo').value,save:e('x-flomo-save').checked});
+ e('x-nt-go').onclick=()=>run(e('x-nt-go'),'notion',{token:e('x-nt-token').value,database:e('x-nt-db').value,save:e('x-nt-save').checked});}
+async function boot(){await loadSettings();await load();await loadStats();await loadCli();await loadSchedule();await loadExport();const v=PARAMS.get('view');if(v)showView(v);const bid=PARAMS.get('book');if(bid)await openBook(bid,null,PARAMS.get('tab'));document.body.dataset.ready='1'}
 boot();</script></body></html>""".encode("utf-8")
 
 
@@ -865,6 +881,19 @@ def make_handler(db_path: Path):
                     state = scheduler.status()
                     state["time"] = get_state(conn, "schedule_time")
                     _json(self, state)
+                elif parsed.path == "/api/export-status":
+                    from .config import get_config
+                    default_md = str(Path.home() / "Documents" / "微信读书笔记")
+                    _json(self, {
+                        "markdown_dir": get_config("export_markdown_dir") or default_md,
+                        "flomo_saved": bool(get_config("flomo_webhook") or os.environ.get("FLOMO_WEBHOOK")),
+                        "notion_saved": bool(
+                            (get_config("notion_token") or os.environ.get("NOTION_TOKEN"))
+                            and (get_config("notion_database") or os.environ.get("NOTION_DATABASE_ID"))
+                        ),
+                        "books_with_notes": conn.execute(
+                            "SELECT COUNT(*) FROM books WHERE total_notes>0").fetchone()[0],
+                    })
                 elif parsed.path == "/api/summary":
                     _json(self, summary(conn))
                 elif parsed.path == "/api/stats":
@@ -1105,6 +1134,50 @@ def make_handler(db_path: Path):
                 except ValueError as error:
                     _json(self, {"error": str(error)}, HTTPStatus.BAD_REQUEST)
                 except Exception as error:  # noqa: BLE001 — launchctl/schtasks/cron failures → page message
+                    _json(self, {"error": str(error)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            if parsed.path == "/api/export":
+                from .config import get_config, save_config
+                try:
+                    body = _read_json_body(self)
+                    target = str(body.get("target", ""))
+                    with connect(db_path) as conn:
+                        if target == "markdown":
+                            from .export import export_markdown
+                            raw = str(body.get("dir", "")).strip()
+                            if not raw:
+                                raise ValueError("请填写导出目录。")
+                            dest = Path(raw).expanduser()
+                            count = export_markdown(conn, dest, with_popular=bool(body.get("with_popular")))
+                            save_config("export_markdown_dir", str(dest))
+                            _json(self, {"status": "ok", "count": count, "dir": str(dest)})
+                            return
+                        if target == "flomo":
+                            from .integrations import export_flomo
+                            webhook = str(body.get("webhook", "")).strip() or get_config("flomo_webhook") or os.environ.get("FLOMO_WEBHOOK", "")
+                            if not webhook:
+                                raise ValueError("请填写 flomo 的 API（Webhook）。")
+                            count = export_flomo(conn, webhook)
+                            if body.get("save"):
+                                save_config("flomo_webhook", webhook)
+                            _json(self, {"status": "ok", "count": count})
+                            return
+                        if target == "notion":
+                            from .integrations import export_notion
+                            token = str(body.get("token", "")).strip() or get_config("notion_token") or os.environ.get("NOTION_TOKEN", "")
+                            database = str(body.get("database", "")).strip() or get_config("notion_database") or os.environ.get("NOTION_DATABASE_ID", "")
+                            if not token or not database:
+                                raise ValueError("请填写 Notion 集成 token 与数据库 ID。")
+                            count = export_notion(conn, token, database)
+                            if body.get("save"):
+                                save_config("notion_token", token)
+                                save_config("notion_database", database)
+                            _json(self, {"status": "ok", "count": count})
+                            return
+                    raise ValueError("未知的导出目标。")
+                except ValueError as error:
+                    _json(self, {"error": str(error)}, HTTPStatus.BAD_REQUEST)
+                except Exception as error:  # noqa: BLE001 — 网络/第三方 API 失败 → 页面提示
                     _json(self, {"error": str(error)}, HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
             if parsed.path == "/api/settings/clear-key":

@@ -77,3 +77,25 @@ def clear_api_key(path: Path | None = None) -> None:
     if data.pop("weread_api_key", None) is None:
         return
     config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def get_config(key: str, path: Path | None = None) -> str:
+    """Read an arbitrary saved value (e.g. flomo webhook, Notion token, last export dir)."""
+    return str(_read_config(path).get(key, ""))
+
+
+def save_config(key: str, value: str, path: Path | None = None) -> Path:
+    """Persist (or, if value is empty, remove) an arbitrary config value with 0600 perms."""
+    config_path = path or default_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    data = _read_config(config_path)
+    if value:
+        data[key] = value
+    else:
+        data.pop(key, None)
+    config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        config_path.chmod(0o600)
+    except OSError:
+        pass
+    return config_path
