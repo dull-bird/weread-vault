@@ -542,6 +542,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <div id='prog' class='prog'><i></i></div>
 <p class='sub'>「同步」会先拉取全书架，再增量同步有变更的笔记，并追加阅读统计。首次可能较慢。API Key 仅保存到本机私有配置，不会上传。</p>
 <div id='cli-box'></div>
+<div id='sched-box'></div>
 <div class='skillbox'>
 <h3>接入 AI · 安装 Skill</h3>
 <p class='dzhint'>把 WeRead Vault 的 Skill 装进你的 AI agent（Claude Code / Codex / OpenClaw），就能用自然语言查阅读数据、按主题荐书、定时同步。把下面这段发给你的 agent：</p>
@@ -810,7 +811,12 @@ async function loadCli(){const box=e('cli-box');let s;try{s=await fetch('/api/cl
  if(!s.supported){box.innerHTML="<div class=clibox><b>命令行</b><p class=dzhint>想在终端用 <code>weread-vault</code>：Windows 请优先使用安装包（会自动注册 PATH），其他情况可用 <code>pipx install weread-vault</code>。</p></div>";return}
  box.innerHTML="<div class=clibox><b>把命令行装到终端</b><p class=dzhint>桌面 App 默认只是图形界面、不会注册命令行。点下面按钮，把 <code>weread-vault</code> 命令链接到系统 PATH（~/.local/bin 或 /usr/local/bin，无需 sudo），之后在终端就能跑 sync、导出、update。</p><div class=dzrow><button id='install-cli' class='ghost' type='button'>注册 weread-vault 命令</button><span id='cli-msg' class='msg'></span></div></div>";
  e('install-cli').onclick=async()=>{const m=e('cli-msg');m.className='msg';m.textContent='安装中…';try{let r=await fetch('/api/install-cli',{method:'POST'});let b=await r.json();if(!r.ok)throw new Error(b.error||'失败');m.className='msg ok';m.textContent='已注册到 '+b.path+'。打开一个新终端即可用 weread-vault。';setTimeout(loadCli,1600)}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};}
-async function boot(){await loadSettings();await load();await loadStats();await loadCli();const v=PARAMS.get('view');if(v)showView(v);const bid=PARAMS.get('book');if(bid)await openBook(bid,null,PARAMS.get('tab'));document.body.dataset.ready='1'}
+async function loadSchedule(){const box=e('sched-box');let s;try{s=await fetch('/api/schedule').then(r=>r.json())}catch(_){box.innerHTML='';return}
+ if(s.enabled){box.innerHTML=`<div class=clibox><b>每天自动同步 · 已开启 ✓</b><p class=dzhint>每天 <b>${esc(s.time||'')}</b> 由系统定时器（${esc(s.platform||'')}）自动同步，无需保持 App 开启、不占后台进程。</p><div class=dzrow><button id='sched-off' class='ghost' type='button'>关闭</button><span id='sched-msg' class='msg'></span></div></div>`;
+  e('sched-off').onclick=async()=>{const m=e('sched-msg');m.className='msg';m.textContent='处理中…';try{let r=await fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({off:true})});if(!r.ok)throw new Error((await r.json()).error||'失败');loadSchedule()}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};return}
+ box.innerHTML=`<div class=clibox><b>每天自动同步</b><p class=dzhint>开启后，系统定时器会每天到点自动跑一次同步（不常驻、不占后台、关机重开照常）。${esc(s.platform||'')}</p><div class=dzrow><input id='sched-time' type='time' value='07:00' style='background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font:inherit;color:var(--fg)'><button id='sched-on' class='ghost' type='button'>开启每天自动同步</button><span id='sched-msg' class='msg'></span></div></div>`;
+ e('sched-on').onclick=async()=>{const m=e('sched-msg');m.className='msg';m.textContent='设置中…';try{let r=await fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({time:e('sched-time').value})});let b=await r.json();if(!r.ok)throw new Error(b.error||'失败');if(b.warning){m.className='msg warn';m.textContent='已开启，但 '+b.warning}else{m.className='msg ok';m.textContent='已开启每天 '+b.time+' 自动同步。'}setTimeout(loadSchedule,1400)}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};}
+async function boot(){await loadSettings();await load();await loadStats();await loadCli();await loadSchedule();const v=PARAMS.get('view');if(v)showView(v);const bid=PARAMS.get('book');if(bid)await openBook(bid,null,PARAMS.get('tab'));document.body.dataset.ready='1'}
 boot();</script></body></html>""".encode("utf-8")
 
 
@@ -852,6 +858,12 @@ def make_handler(db_path: Path):
                     )
                 elif parsed.path == "/api/cli-status":
                     _json(self, cli_status())
+                elif parsed.path == "/api/schedule":
+                    from . import schedule as scheduler
+                    from .db import get_state
+                    state = scheduler.status()
+                    state["time"] = get_state(conn, "schedule_time")
+                    _json(self, state)
                 elif parsed.path == "/api/summary":
                     _json(self, summary(conn))
                 elif parsed.path == "/api/stats":
@@ -1068,6 +1080,30 @@ def make_handler(db_path: Path):
                 except ValueError as error:
                     _json(self, {"error": str(error)}, HTTPStatus.BAD_REQUEST)
                 except OSError as error:
+                    _json(self, {"error": str(error)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            if parsed.path == "/api/schedule":
+                from . import schedule as scheduler
+                from .db import set_state
+                try:
+                    body = _read_json_body(self)
+                    with connect(db_path) as conn:
+                        if body.get("off"):
+                            scheduler.remove()
+                            set_state(conn, "schedule_time", "")
+                            conn.commit()
+                            _json(self, {"status": "ok", "enabled": False})
+                            return
+                        hour, minute = scheduler.parse_time(str(body.get("time", "")))
+                        info = scheduler.install(hour, minute, db=str(db_path))
+                        set_state(conn, "schedule_time", f"{hour:02d}:{minute:02d}")
+                        conn.commit()
+                    warn = "" if api_key_source() == "config" else "API Key 不在本机配置里，定时任务可能读不到——请先在上方保存 Key。"
+                    _json(self, {"status": "ok", "enabled": True, "time": f"{hour:02d}:{minute:02d}",
+                                 "platform": info["platform"], "warning": warn})
+                except ValueError as error:
+                    _json(self, {"error": str(error)}, HTTPStatus.BAD_REQUEST)
+                except Exception as error:  # noqa: BLE001 — launchctl/schtasks/cron failures → page message
                     _json(self, {"error": str(error)}, HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
             if parsed.path == "/api/settings/clear-key":
