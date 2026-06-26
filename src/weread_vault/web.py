@@ -301,6 +301,12 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
          for ts, secs in (monthly.get("readTimes") or {}).items()),
         key=lambda item: item["label"],
     )
+    weekly = by_mode.get("weekly") or {}
+    by_day_week = sorted(
+        ({"label": time.strftime("%m-%d", time.gmtime(int(ts) + 8 * 3600)), "seconds": secs}
+         for ts, secs in (weekly.get("readTimes") or {}).items()),
+        key=lambda item: item["label"],
+    )
     # Daily annotation activity from highlight timestamps — multi-year, GitHub-style heatmap.
     heatmap = {row[0]: row[1] for row in conn.execute(
         "SELECT date(create_time,'unixepoch','+8 hours') AS d, count(*) AS c "
@@ -332,6 +338,7 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
         "sessions": sessions,
         "periods": periods,
         "byMonth": by_month,
+        "byDayWeek": by_day_week,
         "byDayMonth": by_day_month,
         "heatmap": heatmap,
         "overall": {
@@ -575,6 +582,7 @@ const PAL=[['#155eef','#7c3aed'],['#0891b2','#0e7490'],['#db2777','#9d174d'],['#
 function hue(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return PAL[h%PAL.length]}
 function cover(x){const t=x.title||'未命名',fallback=ph(t);if(x.cover){return fallback+`<img loading=lazy src="${esc(x.cover)}" alt="${esc(t)}" onerror="this.remove()">`}return fallback}
 function ph(t){const[a,b]=hue(t);return `<div class=ph style="background:linear-gradient(150deg,${a},${b})">${esc(t).slice(0,18)}</div>`}
+const PARAMS=new URLSearchParams(location.search);
 let allBooks=[],curView='grid',curSort='recent',curCat='',shelfPage=1;const SHELF_PAGE=24;
 const topCat=c=>c?String(c).split('-')[0]:'未分类';
 const isMp=x=>String(x.book_id||'').startsWith('MP_');
@@ -689,9 +697,9 @@ function renderMine(d){
  Object.keys(ideaByCh).forEach(uid=>{if(!groups.some(g=>String(g.uid)===String(uid))){body+=`<div class=ch>${esc(ideaByCh[uid][0].chapter_name||'想法')}</div>`+ideaByCh[uid].map(t=>`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`).join('')}});
  return body+'</div>';
 }
-async function openBook(id,store){if(!id)return;modal.classList.add('show');document.body.style.overflow='hidden';e('sheet').innerHTML='<div class=note-empty>加载中…</div>';
+async function openBook(id,store,initialTab){if(!id)return;modal.classList.add('show');document.body.style.overflow='hidden';e('sheet').innerHTML='<div class=note-empty>加载中…</div>';
  let mine=null;
- if(!store){const d=await fetch('/api/book?book_id='+encodeURIComponent(id)).then(r=>r.json());if(!d.error)mine=d}
+ try{const d=await fetch('/api/book?book_id='+encodeURIComponent(id)).then(r=>r.json());if(!d.error)mine=d}catch(_){}
  const b=mine?mine.book:(store||{}),p=Math.max(0,Math.min(100,b.reading_progress||0));
  const tabs=mine?['mine','popular','reviews','similar']:['popular','reviews','similar'];const LABEL={mine:'我的笔记',popular:'热门划线',reviews:'书评',similar:'相关推荐'};
  const minibar=(label,val,grad)=>`<div class=minibar><span class=mblabel>${label}</span><span class=mbtrack><i style="width:${Math.max(0,Math.min(100,val))}%;background:${grad}"></i></span><span class=mbval>${val}%</span></div>`;
@@ -720,7 +728,7 @@ async function openBook(id,store){if(!id)return;modal.classList.add('show');docu
   if(t==='popular')wrap.querySelectorAll('.ptoggle button').forEach(tb=>tb.onclick=()=>{popOrder=tb.dataset.o;show('popular')});
  }
  e('sheet').querySelectorAll('.tabs button').forEach(btn=>btn.onclick=()=>show(btn.dataset.t));
- show(tabs[0]);
+ show(tabs.includes(initialTab)?initialTab:tabs[0]);
 }
 function toMarkdown(d){const b=d.book;let m=`# ${b.title||'未命名'}\n\n> ${b.author||''}${b.category?' · '+b.category:''}\n\n`;
  const reviews=d.thoughts.filter(t=>t.is_book_review),ideas=d.thoughts.filter(t=>!t.is_book_review);
@@ -749,7 +757,8 @@ function heatmapSVG(heat,year){const C=11,G=3,L=26,T=18;const first=new Date(yea
  const weeks=Math.ceil((idx+fd)/7),W=L+weeks*(C+G),H=T+7*(C+G);
  const wl=[1,3,5].map(dow=>`<text x='0' y='${T+dow*(C+G)+9}' class='hmlbl'>${['','一','','三','','五'][dow]}</text>`).join('');
  return `<svg viewBox='0 0 ${W} ${H}' style='width:100%;max-width:${W}px;height:auto'>${monlbl}${wl}${rects}</svg>`}
-document.querySelectorAll('.nav button').forEach(b=>{const k={shelf:'book',stats:'stats',search:'search',sync:'sync'}[b.dataset.view];if(k)b.insertAdjacentHTML('afterbegin',ICO[k]);b.onclick=()=>{const v=b.dataset.view;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('.view').forEach(s=>{s.hidden=s.dataset.view!==v})}});
+function showView(v){document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('on',x.dataset.view===v));document.querySelectorAll('.view').forEach(s=>{s.hidden=s.dataset.view!==v})}
+document.querySelectorAll('.nav button').forEach(b=>{const k={shelf:'book',stats:'stats',search:'search',sync:'sync'}[b.dataset.view];if(k)b.insertAdjacentHTML('afterbegin',ICO[k]);b.onclick=()=>showView(b.dataset.view)});
 function fmtDur2(s){s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${m}m`:`${m}m`}
 function sessPanel(s){if(!s||!s.distribution)return'';
  if(!s.total)return `<div class=panel><h3>单次阅读时长分布（碎片化） <span class=src>本地计算</span></h3><div class=note-empty style='padding:18px;text-align:left'>${esc(s.verdict||'本周期暂无数据。')}</div></div>`;
@@ -778,16 +787,17 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  if(!d.hasData){sec.className='empty';sec.innerHTML='暂无统计数据，先到「同步设置」同步一次。';return}
  const o=d.overall;
  const PWORD={weekly:c=>`这周在读 ${c}`,monthly:c=>`这个月偏爱 ${c}`,annually:c=>`今年读得最多的是 ${c}`,overall:c=>`一直最常读 ${c}`};
- const charts={monthly:(d.byDayMonth&&d.byDayMonth.length)?`<div class=panel><h3>本月每日时长 <span class=src>微信读书接口</span></h3>${barChart(d.byDayMonth.map(x=>({label:x.label,tick:x.label.slice(3),value:x.seconds})),{h:130})}</div>`:'',
+ const charts={weekly:(d.byDayWeek&&d.byDayWeek.length)?`<div class=panel><h3>本周每日时长 <span class=src>微信读书接口</span></h3>${barChart(d.byDayWeek.map(x=>({label:x.label,tick:x.label.slice(3),value:x.seconds})),{h:130})}</div>`:'',
+  monthly:(d.byDayMonth&&d.byDayMonth.length)?`<div class=panel><h3>本月每日时长 <span class=src>微信读书接口</span></h3>${barChart(d.byDayMonth.map(x=>({label:x.label,tick:x.label.slice(3),value:x.seconds})),{h:130})}</div>`:'',
   annually:(d.byMonth&&d.byMonth.length)?`<div class=panel><h3>本年每月时长 <span class=src>微信读书接口</span></h3>${barChart(d.byMonth.map(m=>({label:m.label+'月',tick:m.label,value:m.seconds})),{h:130})}</div>`:'',
-  overall:(o.byYear&&o.byYear.length)?`<div class=panel><h3>按年阅读时长 <span class=src>微信读书接口</span></h3>${barChart(o.byYear.map(y=>({label:y.label,tick:y.label,value:y.seconds})),{h:130})}</div>`:'',weekly:''};
+  overall:(o.byYear&&o.byYear.length)?`<div class=panel><h3>按年阅读时长 <span class=src>微信读书接口</span></h3>${barChart(o.byYear.map(y=>({label:y.label,tick:y.label,value:y.seconds})),{h:130})}</div>`:''};
  const heat=d.heatmap||{};const years=[...new Set(Object.keys(heat).map(k=>k.slice(0,4)))].sort().reverse();
  const curY=years[0]||String(new Date().getFullYear());
  const ysel=years.map(y=>`<option value=${y}${y===curY?' selected':''}>${y}</option>`).join('');
  const hm=`<div class=panel><h3>划线热力图 <select id=hm-year class=hmsel>${ysel}</select> · 每日划线活跃度 <span class=src>本地计算</span></h3><div id=hm-wrap style='overflow-x:auto'>${heatmapSVG(heat,+curY)}</div><div style='font-size:11px;color:var(--muted);margin-top:8px'>按划线时间统计的每日活跃度（近似阅读活跃，非阅读时长）。颜色越深当天划线越多。</div></div>`;
  const PMAP=[['weekly','本周'],['monthly','本月'],['annually','今年'],['overall','全部']];
  const avail=PMAP.filter(([k])=>d.periods&&d.periods[k]);
- let curP=(avail.find(([k])=>k==='overall')||avail[0]||['overall'])[0];
+ let curP=(avail.find(([k])=>k===PARAMS.get('period'))||avail.find(([k])=>k==='overall')||avail[0]||['overall'])[0];
  const pseg=`<div class=seg id=pseg>${avail.map(([k,l])=>`<button data-p='${k}' type=button class='${k===curP?'on':''}'>${l}</button>`).join('')}</div>`;
  sec.className='';sec.innerHTML=`${hm}<div class=pbar style='margin-top:14px'>${pseg}</div><div id=pblock></div><p style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>标题旁会标注数据来源；微信读书接口来自阅读统计快照，划线时间估算用于接口缺少阅读偏好 / 时段分布 / 常读作者时的近似值，本地计算来自本机数据库里的划线 / 想法时间。热力图始终按全部划线日期展示，不随周期切换。</p>`;
  const fillP=()=>{e('pblock').innerHTML=renderPeriod(d.periods[curP],curP,charts,d.sessions);const top=((d.periods[curP]||{}).categories||[])[0];e('stats-word').textContent=top&&top.title?(PWORD[curP]||(c=>c))(top.title):''};
@@ -800,7 +810,8 @@ async function loadCli(){const box=e('cli-box');let s;try{s=await fetch('/api/cl
  if(!s.supported){box.innerHTML="<div class=clibox><b>命令行</b><p class=dzhint>想在终端用 <code>weread-vault</code>：Windows 请优先使用安装包（会自动注册 PATH），其他情况可用 <code>pipx install weread-vault</code>。</p></div>";return}
  box.innerHTML="<div class=clibox><b>把命令行装到终端</b><p class=dzhint>桌面 App 默认只是图形界面、不会注册命令行。点下面按钮，把 <code>weread-vault</code> 命令链接到系统 PATH（~/.local/bin 或 /usr/local/bin，无需 sudo），之后在终端就能跑 sync、导出、update。</p><div class=dzrow><button id='install-cli' class='ghost' type='button'>注册 weread-vault 命令</button><span id='cli-msg' class='msg'></span></div></div>";
  e('install-cli').onclick=async()=>{const m=e('cli-msg');m.className='msg';m.textContent='安装中…';try{let r=await fetch('/api/install-cli',{method:'POST'});let b=await r.json();if(!r.ok)throw new Error(b.error||'失败');m.className='msg ok';m.textContent='已注册到 '+b.path+'。打开一个新终端即可用 weread-vault。';setTimeout(loadCli,1600)}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};}
-loadSettings();load();loadStats();loadCli();</script></body></html>""".encode("utf-8")
+async function boot(){await loadSettings();await load();await loadStats();await loadCli();const v=PARAMS.get('view');if(v)showView(v);const bid=PARAMS.get('book');if(bid)await openBook(bid,null,PARAMS.get('tab'));document.body.dataset.ready='1'}
+boot();</script></body></html>""".encode("utf-8")
 
 
 def make_handler(db_path: Path):

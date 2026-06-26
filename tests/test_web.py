@@ -66,6 +66,10 @@ class WebTests(unittest.TestCase):
                 "INSERT INTO reading_stats(mode, base_time, payload, fetched_at) VALUES('overall', 0, ?, 100)",
                 (json.dumps(payload),),
             )
+            conn.execute(
+                "INSERT INTO reading_stats(mode, base_time, payload, fetched_at) VALUES('weekly', 0, ?, 101)",
+                (json.dumps({"totalReadTime": 60, "readDays": 1, "readTimes": {"1782057600": 60}}),),
+            )
         data = self.get_json("/api/stats")
         self.assertTrue(data["hasData"])
         overall = data["overall"]
@@ -75,6 +79,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(len(overall["preferTime"]), 24)
         self.assertEqual(len(data["periods"]["overall"]["preferTime"]), 24)
         self.assertEqual(data["periods"]["overall"]["authors"][0]["name"], "刘慈欣")
+        self.assertEqual(data["byDayWeek"][0]["seconds"], 60)
 
     def test_stats_endpoint_estimates_missing_time_and_authors_from_highlights(self):
         now = int(time.time())
