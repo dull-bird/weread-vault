@@ -154,6 +154,11 @@ def parser() -> argparse.ArgumentParser:
     reset.add_argument("--yes", action="store_true", help="跳过确认直接清空")
     update = sub.add_parser("update", help="检查是否有新版本（GitHub Release）")
     update.add_argument("--download", action="store_true", help="下载对应平台的安装包到当前目录")
+    schedule_p = sub.add_parser("schedule", help="设置/取消每天自动同步（用系统定时器，不常驻）")
+    schedule_p.add_argument("--daily", metavar="HH:MM", help="每天几点自动同步，如 07:00")
+    schedule_p.add_argument("--export", metavar="DIR", help="同步成功后顺带导出 Markdown 到该目录")
+    schedule_p.add_argument("--off", action="store_true", help="取消自动同步")
+    schedule_p.add_argument("--status", action="store_true", help="查看当前自动同步设置")
     sub.add_parser("stats", help="输出阅读统计 JSON（供 AI 分析）")
     query = sub.add_parser("query", help="对本地库执行只读 SQL（供 AI 灵活分析）")
     query.add_argument("sql", nargs="?", help="SELECT / WITH 语句；省略则等同 --schema")
@@ -250,6 +255,22 @@ def main(argv: list[str] | None = None) -> None:
             _print_status(db_path)
         elif args.command == "update":
             _check_update(download=args.download)
+        elif args.command == "schedule":
+            from . import schedule as scheduler
+            from .config import api_key_source
+            if args.off:
+                print("已取消每天自动同步。" if scheduler.remove() else "本来就没有设置自动同步。")
+            elif args.status:
+                _emit_json(scheduler.status())
+            elif args.daily:
+                hour, minute = scheduler.parse_time(args.daily)
+                info = scheduler.install(hour, minute, db=args.db, export=args.export)
+                print(f"已设置每天 {hour:02d}:{minute:02d} 自动同步（{info['platform']}）。")
+                if api_key_source() == "env":
+                    print("⚠️  你的 API Key 只在当前终端环境变量里——定时任务读不到。"
+                          "请先用网页「同步设置」保存 Key 到本机配置，或 weread-vault 同步一次以保存。", file=sys.stderr)
+            else:
+                raise WereadVaultError("用法：schedule --daily HH:MM [--export 目录] / --off / --status")
         elif args.command == "reset":
             _require_db(db_path)
             if not args.yes:
