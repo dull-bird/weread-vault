@@ -72,6 +72,8 @@ class WebTests(unittest.TestCase):
         self.assertEqual([y["label"] for y in overall["byYear"]], [2018, 2019])
         self.assertEqual(overall["categories"][0]["title"], "经济理财")
         self.assertEqual(len(overall["preferTime"]), 24)
+        self.assertEqual(len(data["periods"]["overall"]["preferTime"]), 24)
+        self.assertEqual(data["periods"]["overall"]["authors"][0]["name"], "刘慈欣")
 
     def test_stats_endpoint_reports_no_data_when_empty(self):
         self.assertEqual(self.get_json("/api/stats"), {"hasData": False})

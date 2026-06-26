@@ -12,7 +12,7 @@ from .gateway import Gateway
 
 
 def account_fingerprint(api_key: str | None) -> str:
-    """A short, irreversible id for the account behind an API key (the key itself is never stored)."""
+    """A short, irreversible fingerprint of the API key; the key itself is never stored."""
     return hashlib.sha256((api_key or "").encode("utf-8")).hexdigest()[:12] if api_key else ""
 
 Reporter = Callable[[str], None]
