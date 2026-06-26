@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 
 SCHEMA_VERSION = 3
@@ -105,14 +107,25 @@ CREATE INDEX IF NOT EXISTS idx_stats_mode_time ON reading_stats(mode, fetched_at
 """
 
 
-def connect(path: Path) -> sqlite3.Connection:
+@contextmanager
+def connect(path: Path) -> Iterator[sqlite3.Connection]:
+    """Open a vault connection as a context manager: commit on success, roll back on
+    error, and always close. Closing matters on Windows, where a still-open connection
+    keeps a lock on the db file (and its WAL sidecars) and blocks deletion."""
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 5000")
-    return conn
+    try:
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _ensure_columns(conn: sqlite3.Connection) -> None:
