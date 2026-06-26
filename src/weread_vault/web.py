@@ -906,6 +906,40 @@ def make_handler(db_path: Path):
                     if not book_id:
                         _json(self, {"error": "缺少 book_id"}, HTTPStatus.BAD_REQUEST)
                         return
+                    if book_id.startswith("sample-"):
+                        if kind == "similar":
+                            row = conn.execute("SELECT author FROM books WHERE book_id=?", (book_id,)).fetchone()
+                            author = (row["author"] if row else "") or ""
+                            books = conn.execute(
+                                """SELECT book_id,title,author,cover FROM books
+                                WHERE author=? AND book_id<>? ORDER BY sort DESC LIMIT 12""",
+                                (author, book_id),
+                            ).fetchall()
+                            _json(self, {"books": [dict(row) | {"weread_url": weread_url(row["book_id"])} for row in books], "by": author})
+                            return
+                        if kind == "reviews":
+                            exists = conn.execute(
+                                "SELECT name FROM sqlite_master WHERE type='table' AND name='sample_public_reviews'"
+                            ).fetchone()
+                            if exists:
+                                reviews = conn.execute(
+                                    """SELECT content,stars AS star,author,likes FROM sample_public_reviews
+                                    WHERE book_id=? ORDER BY likes DESC""",
+                                    (book_id,),
+                                ).fetchall()
+                                _json(self, {"reviews": [dict(row) for row in reviews]})
+                                return
+                        rows = conn.execute(
+                            """SELECT chapter_title AS chapter,mark_text AS markText,count
+                            FROM popular_highlights WHERE book_id=?
+                            ORDER BY chapter_uid, text_range""",
+                            (book_id,),
+                        ).fetchall()
+                        items = [dict(row) for row in rows]
+                        if query.get("order", ["doc"])[0] == "heat":
+                            items.sort(key=lambda item: item.get("count") or 0, reverse=True)
+                        _json(self, {"items": items})
+                        return
                     try:
                         if kind == "similar":
                             # /book/similar errors out from the gateway, so recommend by same author.
