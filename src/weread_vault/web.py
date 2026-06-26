@@ -545,7 +545,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <div id='sched-box'></div>
 <div class='skillbox'>
 <h3>接入 AI · 安装 Skill</h3>
-<p class='dzhint'>把 WeRead Vault 的 Skill 装进你的 AI agent（Claude Code / Codex / OpenClaw），就能用自然语言查阅读数据、按主题荐书、定时同步。把下面这段发给你的 agent：</p>
+<p class='dzhint'>把 WeRead Vault 的 Skill 装进你的 AI agent（Claude Code / Codex / OpenClaw），就能用自然语言查阅读数据、按主题荐书、随时同步。把下面这段发给你的 agent：</p>
 <div class='cprow'><pre id='sk-install'>请安装并启用 WeRead Vault 的 Skill：
 1) 确保命令行可用：pipx install weread-vault（或我在用桌面 App，已点过「注册 weread-vault 命令」）
 2) 把 https://github.com/dull-bird/weread-vault 的 skills/weread-vault-cli/SKILL.md 装成你的 Skill
@@ -558,7 +558,8 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <li>「这本书大家都在划什么 / 有哪些公开书评」→ <code>weread-vault book &lt;id&gt; popular/reviews</code></li>
 <li>「结合我的口味和联网，按主题给我荐书」→ 荐书 Skill <code>weread-recommend</code></li>
 </ul></details>
-<details class='skd'><summary>OpenClaw 定时同步提示词</summary>
+<details class='skd'><summary>进阶（可选）：让 AI agent 代跑定时同步</summary>
+<p class='dzhint'>想每天自动同步，用上面的「每天自动同步」开关即可，无需 agent。下面这段仅给已经在用 OpenClaw、想让 agent 顺带处理失败日志的人：</p>
 <div class='cprow'><pre id='sk-cron'>每天 07:00（Asia/Shanghai）在隔离会话里跑一次微信读书同步并导出到 Obsidian：
 先 weread-vault sync，成功后 weread-vault export markdown --out "我的 Obsidian 库路径/微信读书"。
 失败保留日志，不要打印 API Key。</pre><button class='ghost copyp' data-t='sk-cron' type='button'>复制</button></div></details>
