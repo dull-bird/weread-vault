@@ -33,9 +33,10 @@ Filename: "{app}\weread-vault.exe"; Description: "启动 WeRead Vault"; Flags: n
 [Code]
 const
   EnvironmentKey = 'Environment';
-  HWND_BROADCAST = $FFFF;
-  WM_SETTINGCHANGE = $001A;
-  SMTO_ABORTIFHUNG = $0002;
+  { 用 WV_ 前缀避免与 Inno Setup 6.7+ 内置的同名常量冲突（Duplicate identifier） }
+  WV_HWND_BROADCAST = $FFFF;
+  WV_WM_SETTINGCHANGE = $001A;
+  WV_SMTO_ABORTIFHUNG = $0002;
 
 function SendMessageTimeout(
   hWnd: LongWord; Msg: LongWord; wParam: LongWord; lParam: String;
@@ -51,8 +52,8 @@ procedure BroadcastEnvironmentChange();
 var
   ResultCode: LongWord;
 begin
-  SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0, 'Environment',
-    SMTO_ABORTIFHUNG, 5000, ResultCode);
+  SendMessageTimeout(WV_HWND_BROADCAST, WV_WM_SETTINGCHANGE, 0, 'Environment',
+    WV_SMTO_ABORTIFHUNG, 5000, ResultCode);
 end;
 
 procedure AddToPath(Dir: String);
