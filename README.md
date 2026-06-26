@@ -22,6 +22,7 @@
 
 - **macOS**：`weread-vault-macos.dmg` —— 打开后把 `WeRead Vault.app` 拖进「应用程序」，双击启动。
 - **Windows**：`weread-vault-windows.exe` —— 双击启动。
+- **Linux**：直接用下面的 `pipx` / `uvx` 命令行方式，功能一样。
 
 启动后浏览器自动打开，在「同步设置」粘贴微信读书 API Key（[从这里获取](https://weread.qq.com/r/weread-skills)），点「同步」即可。
 
@@ -29,7 +30,7 @@
 >
 > 想在终端也用 `weread-vault` 命令？macOS 用户可在 App 网页的「同步设置」里点「注册 weread-vault 命令」一键链接到 PATH（无需 sudo），或直接用下面的 pipx / uvx。
 
-**命令行**（需 Python 3.10+）：
+**命令行**（macOS / Windows / Linux，需 Python 3.10+）：
 
 ```bash
 uvx weread-vault serve --open     # 免安装，临时环境直接跑
@@ -39,7 +40,8 @@ pipx install weread-vault         # 或常驻安装
 **让 AI agent 帮你装**（Claude Code / Codex / OpenClaw 等）：
 
 ```text
-请用 pipx 安装并运行 WeRead Vault：pipx install weread-vault && weread-vault serve --open
+请在 macOS / Windows / Linux 上用 pipx 安装并运行 WeRead Vault：pipx install weread-vault && weread-vault serve --open
+如果没有 pipx，就先用 uvx weread-vault serve --open 跑起来。
 打开网页后提醒我去 https://weread.qq.com/r/weread-skills 获取微信读书 API Key 粘贴同步。
 数据只存我本机，别把 key 写进任何文件。
 ```

@@ -32,6 +32,12 @@ h2{font-size:24px;letter-spacing:-.02em;text-align:center;margin:0 0 8px}
 .feat .e{font-size:22px}.feat h3{margin:10px 0 6px;font-size:16px}.feat p{margin:0;color:var(--muted);font-size:14px}
 pre{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;overflow:auto;font-size:14px;line-height:1.7;text-align:left}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.copybox{position:relative;margin:10px 0 0}
+.copybox pre{margin:0;padding-right:86px}
+.copybtn{position:absolute;top:10px;right:10px;background:var(--brand);color:#fff;border:0;border-radius:8px;padding:6px 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 6px 16px -10px #1556e0}
+.copybtn:hover{filter:brightness(1.06)}
+.copybtn:active{transform:translateY(1px)}
+.copybtn.done{background:#059669}
 .dl{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
 .steps{max-width:680px;margin:18px auto 0;color:var(--muted);font-size:14px;line-height:1.9}
 .steps b{color:var(--fg)}
@@ -70,6 +76,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 22px 60p
 <div class="cta">
 <a class="btn primary" href="https://github.com/dull-bird/weread-vault/releases/latest/download/weread-vault-macos.dmg">下载 macOS</a>
 <a class="btn primary" href="https://github.com/dull-bird/weread-vault/releases/latest/download/weread-vault-windows.exe">下载 Windows</a>
+<a class="btn ghost" href="#install">Linux / 命令行</a>
 <a class="btn ghost" href="https://github.com/dull-bird/weread-vault">GitHub ↗</a>
 </div>
 <p class="note">个人数据归档工具，不是官方客户端，只同步你自己的数据。</p>
@@ -85,26 +92,29 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 22px 60p
 </div>
 </section>
 
-<section style="padding-top:36px">
+<section id="install" style="padding-top:36px">
 <div class="wrap">
 <h2>安装与使用</h2>
 <p class="h2sub">三种方式，从最省心到最灵活；每种都能顺带装上给 AI 用的 Skill。</p>
 <div class="ways">
 <div class="way">
 <h3>① 让 AI agent 自动装（最省心）</h3>
-<p>把下面这段发给 Claude Code / Codex / OpenClaw，它会装好命令行、启用 Skill 并打开 Dashboard：</p>
-<pre><code>请帮我装好 WeRead Vault 并启用它的 Skill：
-1) pipx install weread-vault
+<p>把下面这段发给 Claude Code / Codex / OpenClaw，它会在 macOS / Windows / Linux 上装好命令行、启用 Skill 并打开 Dashboard：</p>
+<div class="copybox">
+<button class="copybtn" type="button" data-copy="agent-install-prompt">复制</button>
+<pre><code id="agent-install-prompt">请帮我装好 WeRead Vault 并启用它的 Skill：
+1) 在 macOS / Windows / Linux 上用 pipx install weread-vault（如果没有 pipx，就用 uvx weread-vault serve --open 先跑起来）
 2) 把 https://github.com/dull-bird/weread-vault 的 skills/weread-vault-cli 装成你的 Skill
 3) 跑 weread-vault serve --open，打开后提醒我去 https://weread.qq.com/r/weread-skills
    取微信读书 API Key 粘贴同步。数据只存我本机，别把 key 写进任何文件。</code></pre>
 </div>
-<div class="way">
-<h3>② 桌面 App + Skill（不想碰命令行）</h3>
-<p>点页面顶部「下载」：macOS 把 <b>WeRead Vault.app</b> 拖进「应用程序」双击，Windows 双击 exe（首次未签名 → macOS 右键 App「打开」/ Windows「更多信息→仍要运行」）。启动后在「同步设置」粘贴 <a href="https://weread.qq.com/r/weread-skills">API Key</a> 同步。想给 AI 用：在「同步设置」点「注册 weread-vault 命令」，并按页面的「安装 Skill」提示操作。</p>
 </div>
 <div class="way">
-<h3>③ 命令行 + Skill（开发者）</h3>
+<h3>② 桌面 App + Skill（macOS / Windows）</h3>
+<p>点页面顶部「下载」：macOS 把 <b>WeRead Vault.app</b> 拖进「应用程序」双击，Windows 双击 exe（首次未签名 → macOS 右键 App「打开」/ Windows「更多信息→仍要运行」）。启动后在「同步设置」粘贴 <a href="https://weread.qq.com/r/weread-skills">API Key</a> 同步。Linux 用户直接用下面的命令行方式，功能一样。想给 AI 用：在「同步设置」点「注册 weread-vault 命令」，并按页面的「安装 Skill」提示操作。</p>
+</div>
+<div class="way">
+<h3>③ 命令行 + Skill（macOS / Windows / Linux）</h3>
 <pre><code>pipx install weread-vault        # 或 uvx weread-vault serve --open
 weread-vault serve --open</code></pre>
 <p>给 agent 用就再装 Skill：仓库的 <a href="https://github.com/dull-bird/weread-vault/tree/main/skills/weread-vault-cli">skills/weread-vault-cli</a>。</p>
@@ -178,6 +188,35 @@ document.querySelectorAll('.car').forEach(car=>{
   function go(n){i=(n+figs.length)%figs.length;figs.forEach((f,k)=>f.classList.toggle('on',k===i));ds.forEach((d,k)=>d.classList.toggle('on',k===i));}
   car.querySelector('.prev').onclick=()=>go(i-1);
   car.querySelector('.next').onclick=()=>go(i+1);
+});
+document.querySelectorAll('[data-copy]').forEach(btn=>{
+  btn.addEventListener('click',async()=>{
+    const target=document.getElementById(btn.dataset.copy);
+    if(!target)return;
+    const text=target.textContent;
+    const original=btn.textContent;
+    try{
+      if(navigator.clipboard&&window.isSecureContext){
+        await navigator.clipboard.writeText(text);
+      }else{
+        const area=document.createElement('textarea');
+        area.value=text;
+        area.setAttribute('readonly','');
+        area.style.position='fixed';
+        area.style.left='-9999px';
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+      }
+      btn.textContent='已复制';
+      btn.classList.add('done');
+      setTimeout(()=>{btn.textContent=original;btn.classList.remove('done')},1400);
+    }catch(_){
+      btn.textContent='复制失败';
+      setTimeout(()=>{btn.textContent=original},1400);
+    }
+  });
 });
 </script>
 </body>
