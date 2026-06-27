@@ -67,6 +67,18 @@ summary{cursor:pointer;color:var(--brand);font-size:14px;text-align:center}
 .dots b{width:8px;height:8px;border-radius:50%;background:var(--line);cursor:pointer}
 .dots b.on{background:var(--brand);width:20px;border-radius:5px}
 footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 22px 60px;border-top:1px solid var(--line)}
+.cmp{width:100%;border-collapse:separate;border-spacing:0;font-size:14px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--card)}
+.cmp th,.cmp td{padding:13px 16px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+.cmp tr:last-child td{border-bottom:0}
+.cmp thead th{font-size:13px;background:color-mix(in srgb,var(--brand) 5%,var(--card))}
+.cmp thead th:last-child{color:var(--brand)}
+.cmp td:first-child{font-weight:600;width:24%}
+.cmp td:nth-child(2){color:var(--muted)}
+.cmp td:last-child{background:color-mix(in srgb,var(--brand) 4%,transparent)}
+.cmp code{background:var(--bg);padding:1px 5px;border-radius:5px;font-size:12.5px}
+.cmp-wrap{overflow-x:auto;border-radius:14px;box-shadow:0 12px 40px -20px #1b212833}
+.cmp-note{color:var(--muted);font-size:13.5px;max-width:760px;margin:20px auto 0;line-height:1.75;text-align:center}
+@media(max-width:680px){.cmp td:first-child{width:auto}}
 </style>
 </head>
 <body>
@@ -174,6 +186,31 @@ weread-vault serve --open</code></pre>
 <div class="dots"></div>
 </div>
 <figure class="shot heatmap"><img src="assets/stats-heatmap.png" alt="划线热力图"><figcaption>划线热力图 —— GitHub 式，每日活跃度，跨多年一目了然</figcaption></figure>
+</div>
+</section>
+
+<section style="background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+<div class="wrap">
+<h2>相比官方微信读书 Skill 的优势</h2>
+<p class="h2sub">官方 Skill 是 17 个无状态、按单本书查的接口；WeRead Vault 把它们一次性归档进本地 SQLite，「按书查」变成「随便查」。</p>
+<div class="cmp-wrap">
+<table class="cmp">
+<thead><tr><th>你想做的事</th><th>官方微信读书 Skill</th><th>WeRead Vault</th></tr></thead>
+<tbody>
+<tr><td>拿到划线</td><td>只能一次一本（<code>/book/bookmarklist</code> 必填 bookId）</td><td>全部划线归档本地，按任意条件查</td></tr>
+<tr><td>搜遍所有划线找某一句话</td><td>先翻完所有书清单，再逐本调接口几百次，拉回本地自己筛</td><td>一条 SQL 全文检索，毫秒级</td></tr>
+<tr><td>跨书聚合（分类、作者排行、笔记最多）</td><td>无聚合接口，得拉全量再自己算</td><td>一条 <code>GROUP BY</code> 搞定</td></tr>
+<tr><td>持久化 / 离线</td><td>每次重新拉、必须联网</td><td>单文件 SQLite，可备份、迁移、离线</td></tr>
+<tr><td>阅读统计可视化</td><td>只给原始 JSON</td><td>周/月/年切换、热力图、读得最多排行等看板</td></tr>
+<tr><td>他人热门划线</td><td>有接口，但要逐本调、不留存</td><td>同步进库，可与自己的划线合并去重再导出</td></tr>
+<tr><td>导出到笔记软件</td><td>无</td><td>Markdown / Obsidian / flomo / Notion</td></tr>
+<tr><td>喂给 AI</td><td>一堆原始接口，AI 得自己编排几百次调用</td><td><code>query</code> / <code>stats</code> / <code>api</code> 三个命令 + 自带 Skill，一条命令拿到答案</td></tr>
+<tr><td>增量同步 / 事务安全</td><td>无状态</td><td>变更水位 + 失败重试，不漏不重</td></tr>
+<tr><td>换账号隔离</td><td>—</td><td>切换账号自动清理旧库 + 账号指纹提示</td></tr>
+</tbody>
+</table>
+</div>
+<p class="cmp-note">举个例子：「我记得在某本书里读到过一句关于『自由』的话，但忘了是哪本。」——用 WeRead Vault 一条命令瞬间从全部划线里搜出所有命中；用官方 Skill 得翻完整个书架、逐本调接口几百次，几分钟还可能被限流，而且每次搜都要重来一遍。</p>
 </div>
 </section>
 

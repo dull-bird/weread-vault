@@ -487,6 +487,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .chiprow{display:flex;gap:7px;flex-wrap:wrap;margin-top:1px}
 .chip.on-hl{background:color-mix(in srgb,#16a34a 15%,transparent);color:#15803d;border-color:transparent}
 .chip.on-th{background:color-mix(in srgb,#db2777 14%,transparent);color:#be185d;border-color:transparent}
+.chip.shelf{background:color-mix(in srgb,var(--brand) 13%,transparent);color:var(--brand);border-color:transparent}
 .bkintro{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.55;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
 .bkintro.open{-webkit-line-clamp:unset}.chip{font-size:12px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
 .bh .x{align-self:flex-start;background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:9px;width:34px;height:34px;font-size:18px;line-height:1;padding:0;cursor:pointer}
@@ -722,7 +723,7 @@ async function openBook(id,store,initialTab){if(!id)return;modal.classList.add('
  const b=mine?mine.book:(store||{}),p=Math.max(0,Math.min(100,b.reading_progress||0));
  const tabs=mine?['mine','popular','reviews','similar']:['popular','reviews','similar'];const LABEL={mine:'我的笔记',popular:'热门划线',reviews:'书评',similar:'相关推荐'};
  const minibar=(label,val,grad)=>`<div class=minibar><span class=mblabel>${label}</span><span class=mbtrack><i style="width:${Math.max(0,Math.min(100,val))}%;background:${grad}"></i></span><span class=mbval>${val}%</span></div>`;
- const st=mine?`<div class=st>${minibar('进度',p,'linear-gradient(90deg,var(--brand),var(--brand2))')}${b.rating?minibar('推荐',Math.round(b.rating/10),'linear-gradient(90deg,#f59e0b,#ef4444)'):''}<div class=chiprow><span class='chip${mine.highlights.length?' on-hl':''}'>划线 ${mine.highlights.length}</span><span class='chip${mine.thoughts.length?' on-th':''}'>想法 ${mine.thoughts.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}${b.word_count?`<span class=chip>${(b.word_count/10000).toFixed(1)} 万字</span>`:''}${b.publisher?`<span class=chip>${esc(b.publisher)}</span>`:''}</div></div>`:'';
+ const st=mine?`<div class=st>${minibar('进度',p,'linear-gradient(90deg,var(--brand),var(--brand2))')}${b.rating?minibar('推荐',Math.round(b.rating/10),'linear-gradient(90deg,#f59e0b,#ef4444)'):''}<div class=chiprow>${b.on_shelf==1?'<span class="chip shelf">📚 在书架</span>':(b.on_shelf===0?'<span class=chip>未在书架</span>':'')}<span class='chip${mine.highlights.length?' on-hl':''}'>划线 ${mine.highlights.length}</span><span class='chip${mine.thoughts.length?' on-th':''}'>想法 ${mine.thoughts.length}</span>${b.category?`<span class=chip>${esc(b.category)}</span>`:''}${b.word_count?`<span class=chip>${(b.word_count/10000).toFixed(1)} 万字</span>`:''}${b.publisher?`<span class=chip>${esc(b.publisher)}</span>`:''}</div></div>`:'';
  const intro=mine&&b.intro?`<div class=bkintro>${esc(b.intro)}</div>`:'';
  const header=`<div class=bh><div class=cover>${cover(b)}</div><div class=bi><h3>${esc(b.title||'未命名')}</h3><div class=a>${esc(b.author||'—')}</div>${st}${intro}</div><div class=bhx>${b.weread_url?`<a class=wr href='${esc(b.weread_url)}' target=_blank rel=noopener title='在微信读书中打开'>${ICO.ext}微信读书</a>`:''}<button class=x type=button title=关闭>×</button></div></div>`;
  const tabbar=`<div class=tabs>${tabs.map((t,i)=>`<button data-t='${t}' type=button class='${i===0?'on':''}'>${LABEL[t]}</button>`).join('')}</div>`;
@@ -927,13 +928,40 @@ def make_handler(db_path: Path):
                     book = conn.execute(
                         """SELECT book_id,title,author,cover,intro,category,publish_time,
                         total_notes,reading_progress,review_count,note_count,bookmark_count,finished,
-                        rating,rating_count,word_count,publisher,isbn,translator
+                        rating,rating_count,word_count,publisher,isbn,translator,on_shelf
                         FROM books WHERE book_id=?""",
                         (book_id,),
                     ).fetchone()
                     if book is None:
                         _json(self, {"error": "not found"}, HTTPStatus.NOT_FOUND)
                         return
+                    book = dict(book)
+                    # Rating / 字数 / 出版社 come from /book/info, which the bulk sync doesn't fetch
+                    # (it's one call per book). Lazily enrich on first open and cache, so opening any
+                    # book shows its real 推荐值 without a separate `sync info` pass. Best-effort:
+                    # no key or offline (e.g. the sample DB) just skips.
+                    if not book.get("rating") and api_key_source() != "none":
+                        try:
+                            info = Gateway().call("/book/info", bookId=book_id)
+                            enrich = {
+                                "rating": int(info.get("newRating") or 0) or None,
+                                "rating_count": info.get("newRatingCount"),
+                                "word_count": info.get("wordCount"),
+                                "publisher": info.get("publisher"),
+                                "isbn": info.get("isbn"),
+                                "intro": info.get("intro") or book.get("intro"),
+                            }
+                            if enrich["rating"]:
+                                with connect(db_path) as wconn:
+                                    wconn.execute(
+                                        """UPDATE books SET rating=?,rating_count=?,word_count=?,
+                                        publisher=?,isbn=?,intro=COALESCE(NULLIF(?,''),intro) WHERE book_id=?""",
+                                        (enrich["rating"], enrich["rating_count"], enrich["word_count"],
+                                         enrich["publisher"], enrich["isbn"], enrich["intro"], book_id),
+                                    )
+                                book.update({k: v for k, v in enrich.items() if v is not None})
+                        except Exception:  # noqa: BLE001 — enrichment is optional; show the book regardless
+                            pass
                     highlights = conn.execute(
                         """SELECT chapter_uid,chapter_title,mark_text,color_style,create_time
                         FROM highlights WHERE book_id=? ORDER BY chapter_uid, create_time""",

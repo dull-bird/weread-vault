@@ -14,6 +14,8 @@ SCHEMA_VERSION = 3
 _BOOK_EXTRA_COLUMNS = {
     "rating": "REAL", "rating_count": "INTEGER", "word_count": "INTEGER",
     "publisher": "TEXT", "isbn": "TEXT", "translator": "TEXT",
+    # 1 = currently on the main bookshelf, 0 = kept only because archived / has notes. Set during sync.
+    "on_shelf": "INTEGER",
 }
 
 SCHEMA = """

@@ -32,6 +32,8 @@ class SyncService:
         # The set of book ids that belong to the current account, collected during a full
         # sync (shelf + notebooks) and used to delete books left over from a previous account.
         self._account_ids: set[str] = set()
+        # Just the books on the *main* bookshelf (not 归档/仅有笔记), to flag books.on_shelf.
+        self._shelf_ids: set[str] = set()
 
     def _run(self, scope: str, action: Callable[[], int]) -> int:
         started = int(time.time())
@@ -170,6 +172,12 @@ class SyncService:
             for book_id in stale:
                 # highlights / thoughts / popular_highlights cascade via ON DELETE CASCADE.
                 self.conn.execute("DELETE FROM books WHERE book_id=?", (book_id,))
+            # Flag which surviving books are on the main shelf (vs only 归档 / 仅有笔记).
+            self.conn.execute("UPDATE books SET on_shelf=0")
+            self.conn.execute("DELETE FROM _keep")
+            self.conn.executemany("INSERT OR IGNORE INTO _keep(book_id) VALUES (?)",
+                                  [(book_id,) for book_id in self._shelf_ids])
+            self.conn.execute("UPDATE books SET on_shelf=1 WHERE book_id IN (SELECT book_id FROM _keep)")
             self.conn.execute("DROP TABLE _keep")
         if stale:
             self.report(f"清理：移除 {len(stale)} 本不在当前账号书架上的书（含旧账号残留）")
@@ -182,9 +190,13 @@ class SyncService:
         books = payload.get("books") or []
         now = int(time.time())
         self._account_ids = set()  # a fresh shelf snapshot starts the current-account id set
+        self._shelf_ids = set()
         with self.conn:
             for item in books:
                 self._upsert_shelf_book(item, now)
+        for item in books:
+            if item.get("bookId"):
+                self._shelf_ids.add(str(item["bookId"]))
         # Record every id that belongs to this account, so reconcile keeps them: shelf books,
         # 归档 (archive) groups, and the 公众号 (mp) pseudo-book.
         for item in books:

@@ -99,6 +99,18 @@ class SyncTests(unittest.TestCase):
             self.assertIsNotNone(conn.execute("SELECT 1 FROM books WHERE book_id='book-1'").fetchone())
             self.assertIsNotNone(conn.execute("SELECT 1 FROM books WHERE book_id='book-2'").fetchone())
 
+    def test_on_shelf_flag_set_during_full_sync(self):
+        with connect(self.db_path) as conn:
+            # An off-shelf book (not returned by /shelf/sync nor /user/notebooks) is removed; the
+            # shelf books from FakeGateway are flagged on_shelf=1.
+            conn.execute("INSERT INTO books(book_id,title,total_notes,sort,synced_at) VALUES('ghost','x',0,1,0)")
+            conn.commit()
+            SyncService(conn, FakeGateway(), report=lambda _: None).all()
+            shelf = {r[0]: r[1] for r in conn.execute("SELECT book_id,on_shelf FROM books")}
+            self.assertEqual(shelf.get("book-1"), 1)
+            self.assertEqual(shelf.get("book-2"), 1)
+            self.assertNotIn("ghost", shelf)  # not on shelf / not noted → reconciled away
+
     def test_notes_skips_books_without_notes(self):
         with connect(self.db_path) as conn:
             gateway = FakeGateway()

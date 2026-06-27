@@ -3,9 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
+import shutil
 import sqlite3
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 from . import __version__
@@ -16,7 +19,7 @@ from .export import export_markdown
 from .gateway import Gateway
 from .integrations import export_flomo, export_notion
 from .sync import SyncService
-from .web import _reading_stats, serve
+from .web import _reading_stats, serve, weread_url
 
 
 def _path(value: str | None) -> Path:
@@ -201,7 +204,51 @@ def parser() -> argparse.ArgumentParser:
         help="info=书籍信息 chapters=目录 popular=他人热门划线 reviews=公开书评 progress=我的进度",
     )
     book_p.add_argument("--count", type=int, default=20, help="reviews 的返回数量（默认 20）")
+    open_p = sub.add_parser("open", help="在微信读书打开一本书（按书名搜本地库，开 App / 网页版）")
+    open_p.add_argument("query", help="书名关键词（模糊匹配本地书架）")
+    open_p.add_argument("--web", action="store_true", help="强制用浏览器打开网页版（默认在 macOS 上尝试唤起 App）")
+    open_p.add_argument("--print", dest="print_only", action="store_true", help="只打印链接，不打开")
     return result
+
+
+def _open_url(url: str) -> None:
+    """Open a URL with the OS default handler. On macOS that routes weread.qq.com links to the
+    WeRead app if it's installed (universal links), otherwise the browser; same idea elsewhere."""
+    system = platform.system()
+    if system == "Darwin":
+        subprocess.run(["open", url], check=False)
+    elif system == "Windows":
+        os.startfile(url)  # type: ignore[attr-defined]
+    elif shutil.which("xdg-open"):
+        subprocess.run(["xdg-open", url], check=False)
+    else:
+        webbrowser.open(url)
+
+
+def _open_book(path: Path, query: str, *, web: bool = False, print_only: bool = False) -> None:
+    _require_db(path)
+    like = f"%{query.strip()}%"
+    with connect(path) as conn:
+        rows = conn.execute(
+            """SELECT book_id,title,author,reading_progress,total_notes FROM books
+            WHERE title LIKE ? ORDER BY (title=?) DESC, total_notes DESC, sort DESC LIMIT 10""",
+            (like, query.strip()),
+        ).fetchall()
+    if not rows:
+        raise WereadVaultError(f"本地书架没找到匹配「{query}」的书。先 weread-vault sync，或换个关键词。")
+    if len(rows) > 1 and rows[0]["title"] != query.strip():
+        print(f"匹配到 {len(rows)} 本，打开最相关的一本；其它候选：")
+        for row in rows[1:6]:
+            print(f"  · {row['title']}（{row['author'] or '—'}）")
+    book = rows[0]
+    url = weread_url(book["book_id"])
+    label = f"《{book['title']}》{book['author'] or ''}".rstrip()
+    if print_only:
+        print(f"{label}\n{url}")
+        return
+    _open_url(url)
+    where = "网页版" if web else "微信读书"
+    print(f"已在{where}打开 {label}\n{url}")
 
 
 def _require_db(path: Path) -> None:
@@ -370,6 +417,8 @@ def main(argv: list[str] | None = None) -> None:
             if not 1 <= args.port <= 65535:
                 raise WereadVaultError("端口必须在 1 到 65535 之间。")
             serve(db_path, args.port, args.open)
+        elif args.command == "open":
+            _open_book(db_path, args.query, web=args.web, print_only=args.print_only)
         elif args.command == "apis":
             for api in Gateway().call("/_list").get("apis", []):
                 required = "，".join(p["name"] for p in api.get("params", []) if p.get("required"))
