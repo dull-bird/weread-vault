@@ -225,6 +225,9 @@ def _open_url(url: str) -> None:
         webbrowser.open(url)
 
 
+_WEREAD_MAC_APP = Path("/Applications/微信读书.app")
+
+
 def _open_book(path: Path, query: str, *, web: bool = False, print_only: bool = False) -> None:
     _require_db(path)
     like = f"%{query.strip()}%"
@@ -241,14 +244,16 @@ def _open_book(path: Path, query: str, *, web: bool = False, print_only: bool = 
         for row in rows[1:6]:
             print(f"  · {row['title']}（{row['author'] or '—'}）")
     book = rows[0]
-    url = weread_url(book["book_id"])
+    # Prefer the native Mac app (weread://bDetail?bId=…) when it's installed; otherwise — or with
+    # --web, or on other platforms — open the web book page (works everywhere).
+    use_app = not web and platform.system() == "Darwin" and _WEREAD_MAC_APP.exists()
+    url = f"weread://bDetail?bId={book['book_id']}" if use_app else weread_url(book["book_id"])
     label = f"《{book['title']}》{book['author'] or ''}".rstrip()
     if print_only:
         print(f"{label}\n{url}")
         return
     _open_url(url)
-    where = "网页版" if web else "微信读书"
-    print(f"已在{where}打开 {label}\n{url}")
+    print(f"已在{'微信读书 App' if use_app else '网页版'}打开 {label}\n{url}")
 
 
 def _require_db(path: Path) -> None:
