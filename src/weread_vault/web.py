@@ -811,7 +811,8 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
   annually:(d.byMonth&&d.byMonth.length)?`<div class=panel><h3>本年每月时长 <span class=src>微信读书接口</span></h3>${barChart(d.byMonth.map(m=>({label:m.label+'月',tick:m.label,value:m.seconds})),{h:130})}</div>`:'',
   overall:(o.byYear&&o.byYear.length)?`<div class=panel><h3>按年阅读时长 <span class=src>微信读书接口</span></h3>${barChart(o.byYear.map(y=>({label:y.label,tick:y.label,value:y.seconds})),{h:130})}</div>`:''};
  const heat=d.heatmap||{};const years=[...new Set(Object.keys(heat).map(k=>k.slice(0,4)))].sort().reverse();
- const curY=years[0]||String(new Date().getFullYear());
+ const yearTotal={};Object.entries(heat).forEach(([k,v])=>{const y=k.slice(0,4);yearTotal[y]=(yearTotal[y]||0)+(v||0)});
+ const curY=years.slice().sort((a,b)=>(yearTotal[b]||0)-(yearTotal[a]||0))[0]||String(new Date().getFullYear());
  const ysel=years.map(y=>`<option value=${y}${y===curY?' selected':''}>${y}</option>`).join('');
  const hm=`<div class=panel><h3>划线热力图 <select id=hm-year class=hmsel>${ysel}</select> · 每日划线活跃度 <span class=src>本地计算</span></h3><div id=hm-wrap style='overflow-x:auto'>${heatmapSVG(heat,+curY)}</div><div style='font-size:11px;color:var(--muted);margin-top:8px'>按划线时间统计的每日活跃度（近似阅读活跃，非阅读时长）。颜色越深当天划线越多。</div></div>`;
  const PMAP=[['weekly','本周'],['monthly','本月'],['annually','今年'],['overall','全部']];

@@ -27,8 +27,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "assets"
 SAMPLE_SQL = ROOT / "docs" / "sample-data" / "weread-vault-sample.sql"
-# 详情页演示书：从示例库里真实存在的 book_id（划线最多、有想法和热门划线的那本）。
-DETAIL_BOOK = "38260364"  # 《给教师的建议》
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
@@ -42,6 +40,19 @@ def build_sample_db(db_path: Path) -> None:
     conn = sqlite3.connect(db_path)
     conn.executescript(SAMPLE_SQL.read_text(encoding="utf-8"))
     conn.close()
+
+
+def detail_book_id(db_path: Path) -> str:
+    """The book shown on the detail-page screenshots: the one with the most highlights — picked
+    from the data itself so it stays valid whenever the sample is rebuilt from a fresh sync."""
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT h.book_id FROM highlights h GROUP BY h.book_id ORDER BY COUNT(*) DESC LIMIT 1"
+        ).fetchone()
+        return row[0] if row else ""
+    finally:
+        conn.close()
 
 
 def chrome_binary() -> str:
@@ -126,6 +137,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "weread-vault-sample.db"
         build_sample_db(db_path)
+        DETAIL_BOOK = detail_book_id(db_path)
         port = free_port()
         server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(db_path))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
