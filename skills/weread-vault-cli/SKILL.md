@@ -99,10 +99,11 @@ The web preview first uses `WEREAD_API_KEY` from the terminal environment that s
 
 ## Open a book in WeRead
 
-When the user says "打开《某本书》" / "open <book>", match it against the local shelf by title and open it in WeRead — no API key needed.
+When the user says "打开《某本书》" / "open <book>", match it against the local shelf by title (or pass a `book_id` for an exact open) and open it in WeRead — no API key needed.
 
 ```bash
 weread-vault open 三体                 # fuzzy match by title
+weread-vault open 3300177663           # exact open by book_id (e.g. an id from `query`/`book`)
 weread-vault open 三体 --pick 2        # pick the 2nd match when several books match
 weread-vault open 财富的真相 --web     # force the browser (web book page)
 weread-vault open 三体 --print         # just print the link, don't open
@@ -110,8 +111,8 @@ weread-vault open 三体 --print         # just print the link, don't open
 
 Behaviour:
 
-- A single match, or a query that is exactly one book's full title, opens immediately.
-- **Several matches → it does not guess.** It prints a numbered list (title · author · 进度 · 笔记数) and asks for `--pick N`. When this happens, show the user the list and let them choose, or re-run with `--pick N` yourself only if the right one is unambiguous.
+- A `book_id`, a single title match, or a query that is exactly one book's full title opens immediately. If you already have the `book_id` (from `weread-vault query` or `book`), pass it — it's unambiguous.
+- **Several title matches → it does not guess.** It prints a numbered list (title · author · 进度 · 笔记数 · `id=…`) and asks for `--pick N`. Show the user the list and let them choose, re-run with `--pick N`, or open one directly by its `book_id`.
 - On macOS it opens the native WeRead app via the `weread://` scheme; if the app isn't installed (or `--web`, or on Windows/Linux) it falls back to the `weread.qq.com` web page.
 
 ## Schedule a daily auto-sync

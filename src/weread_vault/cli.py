@@ -205,7 +205,7 @@ def parser() -> argparse.ArgumentParser:
     )
     book_p.add_argument("--count", type=int, default=20, help="reviews 的返回数量（默认 20）")
     open_p = sub.add_parser("open", help="在微信读书打开一本书（按书名搜本地库，开 App / 网页版）")
-    open_p.add_argument("query", help="书名关键词（模糊匹配本地书架）")
+    open_p.add_argument("query", help="书名关键词（模糊匹配本地书架）或 book_id（精确）")
     open_p.add_argument("--pick", type=int, metavar="N", help="多本匹配时，打开列表里的第 N 本")
     open_p.add_argument("--web", action="store_true", help="强制用浏览器打开网页版（默认在 macOS 上尝试唤起 App）")
     open_p.add_argument("--print", dest="print_only", action="store_true", help="只打印链接，不打开")
@@ -239,15 +239,19 @@ def _open_book(path: Path, query: str, *, pick: int | None = None, web: bool = F
                print_only: bool = False) -> None:
     _require_db(path)
     query = query.strip()
-    like = f"%{query}%"
+    cols = "SELECT book_id,title,author,reading_progress,total_notes FROM books"
     with connect(path) as conn:
-        rows = conn.execute(
-            """SELECT book_id,title,author,reading_progress,total_notes FROM books
-            WHERE title LIKE ? ORDER BY (title=?) DESC, total_notes DESC, sort DESC LIMIT 20""",
-            (like, query),
-        ).fetchall()
+        # Exact book_id first (an agent often already has the id from `query`/`book`), else title.
+        by_id = conn.execute(f"{cols} WHERE book_id=?", (query,)).fetchone()
+        if by_id is not None:
+            rows = [by_id]
+        else:
+            rows = conn.execute(
+                f"{cols} WHERE title LIKE ? ORDER BY (title=?) DESC, total_notes DESC, sort DESC LIMIT 20",
+                (f"%{query}%", query),
+            ).fetchall()
     if not rows:
-        raise WereadVaultError(f"本地书架没找到匹配「{query}」的书。先 weread-vault sync，或换个关键词。")
+        raise WereadVaultError(f"本地书架没找到匹配「{query}」的书（书名或 book_id）。先 weread-vault sync，或换个关键词。")
     exact = [row for row in rows if row["title"] == query]
     if pick is not None:
         if not 1 <= pick <= len(rows):
@@ -259,10 +263,11 @@ def _open_book(path: Path, query: str, *, pick: int | None = None, web: bool = F
         book = exact[0]  # the query is itself a full, unambiguous title
     else:
         # Ambiguous — don't guess. List the matches so the user (or the AI) can pick.
-        print(f"「{query}」匹配到 {len(rows)} 本，请用 weread-vault open \"{query}\" --pick N 选一本：")
+        print(f"「{query}」匹配到 {len(rows)} 本，用 --pick N 选一本，或直接用 book_id 打开：")
         for index, row in enumerate(rows, 1):
             progress = f"{row['reading_progress']}%" if row["reading_progress"] is not None else "—"
-            print(f"  [{index}] {row['title']}（{row['author'] or '—'}）· 进度 {progress} · {row['total_notes'] or 0} 笔记")
+            print(f"  [{index}] {row['title']}（{row['author'] or '—'}）· 进度 {progress} · "
+                  f"{row['total_notes'] or 0} 笔记 · id={row['book_id']}")
         return
     book_id = book["book_id"]
     web_url = weread_url(book_id)
