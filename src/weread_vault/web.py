@@ -961,7 +961,13 @@ def make_handler(db_path: Path):
                     if not book_id:
                         _json(self, {"error": "缺少 book_id"}, HTTPStatus.BAD_REQUEST)
                         return
-                    if book_id.startswith("sample-"):
+                    # Offline sample DB (used for the docs screenshots): serve 热门划线/书评/相关推荐
+                    # from local tables instead of the live API, so generation needs no key/network
+                    # and is reproducible. The presence of sample_public_reviews marks this mode.
+                    sample_mode = book_id.startswith("sample-") or conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sample_public_reviews'"
+                    ).fetchone() is not None
+                    if sample_mode:
                         if kind == "similar":
                             row = conn.execute("SELECT author FROM books WHERE book_id=?", (book_id,)).fetchone()
                             author = (row["author"] if row else "") or ""
@@ -976,14 +982,13 @@ def make_handler(db_path: Path):
                             exists = conn.execute(
                                 "SELECT name FROM sqlite_master WHERE type='table' AND name='sample_public_reviews'"
                             ).fetchone()
-                            if exists:
-                                reviews = conn.execute(
-                                    """SELECT content,stars AS star,author,likes FROM sample_public_reviews
-                                    WHERE book_id=? ORDER BY likes DESC""",
-                                    (book_id,),
-                                ).fetchall()
-                                _json(self, {"reviews": [dict(row) for row in reviews]})
-                                return
+                            reviews = conn.execute(
+                                """SELECT content,stars AS star,author,likes FROM sample_public_reviews
+                                WHERE book_id=? ORDER BY likes DESC""",
+                                (book_id,),
+                            ).fetchall() if exists else []
+                            _json(self, {"reviews": [dict(row) for row in reviews]})
+                            return
                         rows = conn.execute(
                             """SELECT chapter_title AS chapter,mark_text AS markText,count
                             FROM popular_highlights WHERE book_id=?
