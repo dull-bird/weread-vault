@@ -225,7 +225,13 @@ def _open_url(url: str) -> None:
         webbrowser.open(url)
 
 
-_WEREAD_MAC_APP = Path("/Applications/微信读书.app")
+def _open_weread_app(book_id: str) -> bool:
+    """Try to open the book in the native macOS WeRead app via its weread:// scheme. Returns True
+    if the app handled it; False (e.g. app not installed → no handler) so the caller falls back."""
+    if platform.system() != "Darwin":
+        return False
+    result = subprocess.run(["open", f"weread://bDetail?bId={book_id}"], capture_output=True, check=False)
+    return result.returncode == 0
 
 
 def _open_book(path: Path, query: str, *, web: bool = False, print_only: bool = False) -> None:
@@ -244,16 +250,22 @@ def _open_book(path: Path, query: str, *, web: bool = False, print_only: bool = 
         for row in rows[1:6]:
             print(f"  · {row['title']}（{row['author'] or '—'}）")
     book = rows[0]
-    # Prefer the native Mac app (weread://bDetail?bId=…) when it's installed; otherwise — or with
-    # --web, or on other platforms — open the web book page (works everywhere).
-    use_app = not web and platform.system() == "Darwin" and _WEREAD_MAC_APP.exists()
-    url = f"weread://bDetail?bId={book['book_id']}" if use_app else weread_url(book["book_id"])
+    book_id = book["book_id"]
+    web_url = weread_url(book_id)
     label = f"《{book['title']}》{book['author'] or ''}".rstrip()
     if print_only:
-        print(f"{label}\n{url}")
+        link = web_url if web else (f"weread://bDetail?bId={book_id}" if platform.system() == "Darwin" else web_url)
+        print(f"{label}\n{link}")
         return
-    _open_url(url)
-    print(f"已在{'微信读书 App' if use_app else '网页版'}打开 {label}\n{url}")
+    # On macOS, try the native app first; if it's not installed the open fails and we fall back to
+    # the web page. With --web (or on other platforms) go straight to the web page — works anywhere.
+    if not web and _open_weread_app(book_id):
+        print(f"已在微信读书 App 打开 {label}")
+        return
+    if not web and platform.system() == "Darwin":
+        print("未检测到微信读书 App，改用网页版。")
+    _open_url(web_url)
+    print(f"已在网页版打开 {label}\n{web_url}")
 
 
 def _require_db(path: Path) -> None:
