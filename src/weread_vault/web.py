@@ -602,7 +602,7 @@ function hue(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;
 function cover(x){const t=x.title||'未命名',fallback=ph(t);if(x.cover){return fallback+`<img loading=lazy src="${esc(x.cover)}" alt="${esc(t)}" onerror="this.remove()">`}return fallback}
 function ph(t){const[a,b]=hue(t);return `<div class=ph style="background:linear-gradient(150deg,${a},${b})">${esc(t).slice(0,18)}</div>`}
 const PARAMS=new URLSearchParams(location.search);
-let allBooks=[],curView='grid',curSort='recent',curCat='',shelfPage=1;const SHELF_PAGE=24;
+let allBooks=[],curView='grid',curSort=(PARAMS.get('sort')||'recent'),curCat='',shelfPage=1;const SHELF_PAGE=24;
 const topCat=c=>c?String(c).split('-')[0]:'未分类';
 const isMp=x=>String(x.book_id||'').startsWith('MP_');
 const SORTERS={recent:(a,b)=>(b.sort||0)-(a.sort||0),progress:(a,b)=>(b.reading_progress||0)-(a.reading_progress||0),notes:(a,b)=>(b.total_notes||0)-(a.total_notes||0),rating:(a,b)=>(b.rating||0)-(a.rating||0),words:(a,b)=>(b.word_count||0)-(a.word_count||0),title:(a,b)=>String(a.title||'').localeCompare(String(b.title||''),'zh')};
@@ -636,7 +636,7 @@ async function load(){
  e('cat-sel').value=curCat;
  renderShelf();
 }
-e('sort-sel').onchange=ev=>{curSort=ev.target.value;shelfPage=1;renderShelf()};
+e('sort-sel').value=curSort;e('sort-sel').onchange=ev=>{curSort=ev.target.value;shelfPage=1;renderShelf()};
 e('cat-sel').onchange=ev=>{curCat=ev.target.value;shelfPage=1;renderShelf()};
 e('view-seg').querySelectorAll('button').forEach(b=>b.onclick=()=>{curView=b.dataset.v;shelfPage=1;e('view-seg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));renderShelf()});
 async function loadSettings(){let x=await fetch('/api/settings').then(r=>r.json()),box=e('keybox'),status=e('api-key-status');box.style.display=x.source==='none'?'flex':'none';

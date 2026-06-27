@@ -66,6 +66,10 @@ pipx install weread-vault         # 或常驻安装，weread-vault 命令上 PAT
 
 ![阅读统计](docs/assets/reading-stats.png)
 
+GitHub 式划线热力图，跨多年一目了然：
+
+![划线热力图](docs/assets/stats-heatmap.png)
+
 ## 📖 书籍详情
 
 进度与推荐值用进度条体现书间差异，划线/想法用颜色标记。四个 tab：**我的笔记 / 热门划线 / 书评 / 相关推荐**——每条笔记都能一键复制，还能跳转到微信读书。
@@ -75,6 +79,12 @@ pipx install weread-vault         # 或常驻安装，weread-vault 命令上 PAT
 热门划线可按「原文顺序」或「按热度」排列，看到大家都在划的句子（含人数）：
 
 ![热门划线](docs/assets/popular-highlights.png)
+
+还能看这本书的公开书评，以及同作者的相关推荐：
+
+![书评](docs/assets/detail-reviews.png)
+
+![相关推荐](docs/assets/detail-similar.png)
 
 ## ⌨️ 常用命令
 

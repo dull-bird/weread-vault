@@ -108,6 +108,25 @@ def autocrop(path: Path, pad: int = 28) -> None:
     image.crop(box).save(path)
 
 
+def pad_to_equal_height(paths: list[Path]) -> None:
+    """Pad each image at the bottom (with its own background colour) so they all share the tallest
+    height — keeps the homepage stats carousel from jumping between differently-sized periods."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return
+    images = [(p, Image.open(p).convert("RGB")) for p in paths if p.exists()]
+    if not images:
+        return
+    target = max(img.height for _, img in images)
+    for path, img in images:
+        if img.height == target:
+            continue
+        canvas = Image.new("RGB", (img.width, target), img.getpixel((0, 0)))
+        canvas.paste(img, (0, 0))
+        canvas.save(path)
+
+
 def screenshot(chrome: str, url: str, output: Path, width: int, height: int) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as profile:
@@ -149,7 +168,7 @@ def main() -> None:
             # Full-app shots keep the sidebar; `crop=True` shots use ?shot= to isolate one
             # piece (heatmap / a period's stat cards) and are auto-trimmed to that content.
             assets = {
-                "dashboard.png": ("", 1440, 1040, False),
+                "dashboard.png": ("?sort=progress", 1440, 1040, False),
                 "book-detail.png": (b, 1440, 1040, False),
                 "detail-mine.png": (f"{b}&tab=mine", 1280, 980, False),
                 "detail-popular.png": (f"{b}&tab=popular", 1280, 980, False),
@@ -168,6 +187,9 @@ def main() -> None:
                 if crop:
                     autocrop(OUT / name)
                 print(f"wrote {OUT / name}")
+            # The 4 period stat cards differ in height (本周 has fewer cards). Pad them all to the
+            # tallest so the homepage carousel doesn't jump when switching between periods.
+            pad_to_equal_height([OUT / f"stats-{p}.png" for p in ("week", "month", "year", "all")])
         finally:
             server.shutdown()
             server.server_close()
