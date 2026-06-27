@@ -1,6 +1,6 @@
 ---
 name: weread-vault-cli
-description: Use when a user wants to install WeRead Vault, sync WeRead books/highlights/thoughts/stats, inspect/search/export/back up the local SQLite database, open the local dashboard, or export WeRead notes to Obsidian/Markdown with the weread-vault CLI. This skill covers safe local-first operations for Claude Code, Codex, OpenClaw, and similar AI agents; it requires WEREAD_API_KEY only for a sync.
+description: Use when a user wants to install WeRead Vault, sync WeRead books/highlights/thoughts/stats, inspect/search/export/back up the local SQLite database, open the local dashboard, open a specific book in the WeRead app or website, schedule a daily auto-sync, or export WeRead notes to Obsidian/Markdown/flomo/Notion with the weread-vault CLI. This skill covers safe local-first operations for Claude Code, Codex, OpenClaw, and similar AI agents; it requires WEREAD_API_KEY only for a sync.
 ---
 
 # WeRead Vault CLI
@@ -96,6 +96,36 @@ The web preview has one primary `同步` button plus an advanced `完整重扫` 
 The shelf supports cover and list views, sorting (recently added / reading progress / note count / title) and category filtering; clicking a book opens a per-chapter reading view of its highlights and thoughts (with dates) and a one-click "复制 Markdown" action.
 
 The web preview first uses `WEREAD_API_KEY` from the terminal environment that started `weread-vault serve`; if missing, the page lets the user save the key to the local private config file. Never ask the user to paste the key into chat, and never echo the key back in logs or responses.
+
+## Open a book in WeRead
+
+When the user says "打开《某本书》" / "open <book>", match it against the local shelf by title and open it in WeRead — no API key needed.
+
+```bash
+weread-vault open 三体                 # fuzzy match by title
+weread-vault open 三体 --pick 2        # pick the 2nd match when several books match
+weread-vault open 财富的真相 --web     # force the browser (web book page)
+weread-vault open 三体 --print         # just print the link, don't open
+```
+
+Behaviour:
+
+- A single match, or a query that is exactly one book's full title, opens immediately.
+- **Several matches → it does not guess.** It prints a numbered list (title · author · 进度 · 笔记数) and asks for `--pick N`. When this happens, show the user the list and let them choose, or re-run with `--pick N` yourself only if the right one is unambiguous.
+- On macOS it opens the native WeRead app via the `weread://` scheme; if the app isn't installed (or `--web`, or on Windows/Linux) it falls back to the `weread.qq.com` web page.
+
+## Schedule a daily auto-sync
+
+Register an OS-native scheduled sync (launchd on macOS / Task Scheduler on Windows / cron on Linux). It is not a resident daemon — the OS wakes `weread-vault` once a day and it exits.
+
+```bash
+weread-vault schedule --daily 07:00                      # sync every day at 07:00
+weread-vault schedule --daily 07:00 --export "<dir>"     # …and export Markdown after each sync
+weread-vault schedule --status                           # show current setting
+weread-vault schedule --off                              # cancel
+```
+
+The API key must be saved to the local config (not just an env var) for the scheduled job to read it. Two syncs firing at once (e.g. this and an OpenClaw cron both at 07:00) are safe — `sync` holds a cross-process lock and the second one skips.
 
 ## WeRead API access (for agents)
 
