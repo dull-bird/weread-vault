@@ -22,6 +22,10 @@ from .gateway import Gateway
 from .sync import SyncService
 
 
+class _StopSync(Exception):
+    """Internal: bail out of the streaming sync early (e.g. another sync already holds the lock)."""
+
+
 def _json(handler: BaseHTTPRequestHandler, body: object, status: int = 200) -> None:
     encoded = json.dumps(body, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
@@ -513,6 +517,13 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .smode{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;vertical-align:middle}
 .smode button{background:var(--card);border:0;color:var(--muted);padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}.smode button.on{background:var(--brand);color:#fff}
 @media(max-width:620px){.cards{grid-template-columns:1fr}.grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 12px}.sheet{margin:0;border-radius:0;min-height:100vh}}
+/* 截图隔离模式（?shot=…）：只渲染目标内容，隐藏侧栏与标题，便于生成干净的文档截图。 */
+body.shot .sidebar{display:none}
+body.shot .content{padding:18px}
+body.shot .view[data-view='stats']>h2{display:none}
+body.shot #stats-note{display:none}
+body.shot-heat #stats-rest{display:none}
+body.shot-stats #hm-sec{display:none}
 </style></head>
 <body><div class='layout'>
 <aside class='sidebar'>
@@ -565,7 +576,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 <li>「结合我的口味和联网，按主题给我荐书」→ 荐书 Skill <code>weread-recommend</code></li>
 </ul></details>
 <details class='skd'><summary>进阶（可选）：让 AI agent 代跑定时同步</summary>
-<p class='dzhint'>想每天自动同步，用上面的「每天自动同步」开关即可，无需 agent。下面这段仅给已经在用 OpenClaw、想让 agent 顺带处理失败日志的人：</p>
+<p class='dzhint'>想每天自动同步，用上面的「每天自动同步」开关即可，无需这段——<b>已开启每天同步的话，这个就不用配了</b>。它只留给已经在用 OpenClaw、想让 agent 顺带处理失败日志的人。就算两者都设成 07:00 也没关系：同步带了跨进程互斥锁，同时触发时只会跑一个，另一个自动跳过。</p>
 <div class='cprow'><pre id='sk-cron'>每天 07:00（Asia/Shanghai）在隔离会话里跑一次微信读书同步并导出到 Obsidian：
 先 weread-vault sync，成功后 weread-vault export markdown --out "我的 Obsidian 库路径/微信读书"。
 失败保留日志，不要打印 API Key。</pre><button class='ghost copyp' data-t='sk-cron' type='button'>复制</button></div></details>
@@ -805,9 +816,9 @@ async function loadStats(){let d=await fetch('/api/stats').then(r=>r.json());con
  const hm=`<div class=panel><h3>划线热力图 <select id=hm-year class=hmsel>${ysel}</select> · 每日划线活跃度 <span class=src>本地计算</span></h3><div id=hm-wrap style='overflow-x:auto'>${heatmapSVG(heat,+curY)}</div><div style='font-size:11px;color:var(--muted);margin-top:8px'>按划线时间统计的每日活跃度（近似阅读活跃，非阅读时长）。颜色越深当天划线越多。</div></div>`;
  const PMAP=[['weekly','本周'],['monthly','本月'],['annually','今年'],['overall','全部']];
  const avail=PMAP.filter(([k])=>d.periods&&d.periods[k]);
- let curP=(avail.find(([k])=>k===PARAMS.get('period'))||avail.find(([k])=>k==='overall')||avail[0]||['overall'])[0];
+ let curP=(avail.find(([k])=>k===PARAMS.get('period'))||avail.find(([k])=>k==='weekly')||avail[0]||['weekly'])[0];
  const pseg=`<div class=seg id=pseg>${avail.map(([k,l])=>`<button data-p='${k}' type=button class='${k===curP?'on':''}'>${l}</button>`).join('')}</div>`;
- sec.className='';sec.innerHTML=`${hm}<div class=pbar style='margin-top:14px'>${pseg}</div><div id=pblock></div><p style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>标题旁会标注数据来源；微信读书接口来自阅读统计快照，划线时间估算用于接口缺少阅读偏好 / 时段分布 / 常读作者时的近似值，本地计算来自本机数据库里的划线 / 想法时间。热力图始终按全部划线日期展示，不随周期切换。</p>`;
+ sec.className='';sec.innerHTML=`<div id=hm-sec>${hm}</div><div id=stats-rest><div class=pbar style='margin-top:14px'>${pseg}</div><div id=pblock></div></div><p id=stats-note style='font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6'>标题旁会标注数据来源；微信读书接口来自阅读统计快照，划线时间估算用于接口缺少阅读偏好 / 时段分布 / 常读作者时的近似值，本地计算来自本机数据库里的划线 / 想法时间。热力图始终按全部划线日期展示，不随周期切换。</p>`;
  const fillP=()=>{e('pblock').innerHTML=renderPeriod(d.periods[curP],curP,charts,d.sessions);const top=((d.periods[curP]||{}).categories||[])[0];e('stats-word').textContent=top&&top.title?(PWORD[curP]||(c=>c))(top.title):''};
  document.querySelectorAll('#pseg button').forEach(btn=>btn.onclick=()=>{curP=btn.dataset.p;document.querySelectorAll('#pseg button').forEach(x=>x.classList.toggle('on',x===btn));fillP()});
  fillP();
@@ -834,7 +845,7 @@ async function loadExport(){const box=e('export-box');let s;try{s=await fetch('/
  e('x-md-go').onclick=()=>run(e('x-md-go'),'markdown',{dir:e('x-md').value,with_popular:e('x-md-pop').checked});
  e('x-flomo-go').onclick=()=>run(e('x-flomo-go'),'flomo',{webhook:e('x-flomo').value,save:e('x-flomo-save').checked});
  e('x-nt-go').onclick=()=>run(e('x-nt-go'),'notion',{token:e('x-nt-token').value,database:e('x-nt-db').value,save:e('x-nt-save').checked});}
-async function boot(){await loadSettings();await load();await loadStats();await loadCli();await loadSchedule();await loadExport();const v=PARAMS.get('view');if(v)showView(v);const bid=PARAMS.get('book');if(bid)await openBook(bid,null,PARAMS.get('tab'));document.body.dataset.ready='1'}
+async function boot(){const shot=PARAMS.get('shot');if(shot){document.body.classList.add('shot',shot==='heatmap'?'shot-heat':'shot-stats')}await loadSettings();await load();await loadStats();await loadCli();await loadSchedule();await loadExport();const v=PARAMS.get('view');if(v)showView(v);const bid=PARAMS.get('book');if(bid)await openBook(bid,null,PARAMS.get('tab'));document.body.dataset.ready='1'}
 boot();</script></body></html>""".encode("utf-8")
 
 
@@ -1255,7 +1266,11 @@ def make_handler(db_path: Path):
                     pass
 
             try:
-                with connect(db_path) as conn:
+                from . import sync_lock as proc_lock
+                with proc_lock.single_sync(db_path) as acquired, connect(db_path) as conn:
+                    if not acquired:
+                        emit({"error": "已有一个同步正在进行（可能是定时任务在跑），请稍后再试。"})
+                        raise _StopSync
                     service = SyncService(conn, Gateway(), report=lambda message: emit({"line": message}))
                     warning = service.account_warning()
                     if warning:
@@ -1277,6 +1292,8 @@ def make_handler(db_path: Path):
                         emit({"line": "同步阅读统计…"})
                         counts["stats"] = service.stats()
                         emit({"done": True, "counts": counts})
+            except _StopSync:
+                pass  # the busy message was already emitted
             except Exception as error:  # noqa: BLE0001 — surfaced to the page as a stream error line
                 emit({"error": str(error)})
             finally:

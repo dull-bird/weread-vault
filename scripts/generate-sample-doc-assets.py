@@ -78,6 +78,25 @@ def wait_for_server(url: str) -> None:
     raise RuntimeError(f"Timed out waiting for {url}")
 
 
+def autocrop(path: Path, pad: int = 28) -> None:
+    """Trim the page background around the rendered content so a `?shot=` capture keeps only
+    the card(s) — no sidebar, no surrounding whitespace. The top-left pixel is the page bg."""
+    try:
+        from PIL import Image, ImageChops
+    except ImportError:
+        print("  (PIL 不可用，跳过裁剪)")
+        return
+    image = Image.open(path).convert("RGB")
+    background = Image.new("RGB", image.size, image.getpixel((0, 0)))
+    bbox = ImageChops.difference(image, background).getbbox()
+    if not bbox:
+        return
+    left, top, right, bottom = bbox
+    box = (max(0, left - pad), max(0, top - pad),
+           min(image.width, right + pad), min(image.height, bottom + pad))
+    image.crop(box).save(path)
+
+
 def screenshot(chrome: str, url: str, output: Path, width: int, height: int) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as profile:
@@ -115,22 +134,27 @@ def main() -> None:
         try:
             wait_for_server(base)
             b = f"?book={DETAIL_BOOK}"
+            # Full-app shots keep the sidebar; `crop=True` shots use ?shot= to isolate one
+            # piece (heatmap / a period's stat cards) and are auto-trimmed to that content.
             assets = {
-                "dashboard.png": ("", 1440, 1040),
-                "book-detail.png": (b, 1440, 1040),
-                "detail-mine.png": (f"{b}&tab=mine", 1280, 980),
-                "detail-popular.png": (f"{b}&tab=popular", 1280, 980),
-                "detail-reviews.png": (f"{b}&tab=reviews", 1280, 980),
-                "detail-similar.png": (f"{b}&tab=similar", 1280, 980),
-                "popular-highlights.png": (f"{b}&tab=popular", 1440, 1040),
-                "reading-stats.png": ("?view=stats&period=overall", 1440, 1040),
-                "stats-all.png": ("?view=stats&period=overall", 1280, 1320),
-                "stats-year.png": ("?view=stats&period=annually", 1280, 1320),
-                "stats-month.png": ("?view=stats&period=monthly", 1280, 1320),
-                "stats-heatmap.png": ("?view=stats&period=overall", 1280, 520),
+                "dashboard.png": ("", 1440, 1040, False),
+                "book-detail.png": (b, 1440, 1040, False),
+                "detail-mine.png": (f"{b}&tab=mine", 1280, 980, False),
+                "detail-popular.png": (f"{b}&tab=popular", 1280, 980, False),
+                "detail-reviews.png": (f"{b}&tab=reviews", 1280, 980, False),
+                "detail-similar.png": (f"{b}&tab=similar", 1280, 980, False),
+                "popular-highlights.png": (f"{b}&tab=popular", 1440, 1040, False),
+                "reading-stats.png": ("?view=stats&period=weekly", 1440, 1040, False),
+                "stats-heatmap.png": ("?view=stats&shot=heatmap", 1280, 760, True),
+                "stats-week.png": ("?view=stats&shot=stats&period=weekly", 1280, 2200, True),
+                "stats-month.png": ("?view=stats&shot=stats&period=monthly", 1280, 2200, True),
+                "stats-year.png": ("?view=stats&shot=stats&period=annually", 1280, 2200, True),
+                "stats-all.png": ("?view=stats&shot=stats&period=overall", 1280, 2200, True),
             }
-            for name, (query, width, height) in assets.items():
+            for name, (query, width, height, crop) in assets.items():
                 screenshot(chrome, base + query, OUT / name, width, height)
+                if crop:
+                    autocrop(OUT / name)
                 print(f"wrote {OUT / name}")
         finally:
             server.shutdown()

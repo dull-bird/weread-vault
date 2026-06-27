@@ -228,28 +228,35 @@ def main(argv: list[str] | None = None) -> None:
             initialize(db_path)
             print(f"已创建本地数据库：{db_path}")
         elif args.command == "sync":
+            from . import sync_lock
             initialize(db_path)
-            with connect(db_path) as conn:
-                service = SyncService(conn, Gateway())
-                warning = service.account_warning()
-                if warning:
-                    print(f"⚠️  {warning}", file=sys.stderr)
-                if args.limit is not None and args.limit < 1:
-                    raise WereadVaultError("--limit 必须是正整数。")
-                if args.scope == "shelf":
-                    count = service.shelf()
-                elif args.scope == "books":
-                    count = service.books()
-                elif args.scope == "notes":
-                    count = service.notes(args.full_notes, args.limit)
-                elif args.scope == "stats":
-                    count = service.stats()
-                elif args.scope == "info":
-                    count = service.info(args.limit, args.refresh)
-                elif args.scope == "popular":
-                    count = service.popular(args.limit, args.refresh)
-                else:
-                    count = service.all(args.full_notes, args.limit)
+            # One sync at a time across processes, so a scheduled job and an OpenClaw cron both
+            # firing at 07:00 don't collide on the database — the second simply skips.
+            with sync_lock.single_sync(db_path) as acquired:
+                if not acquired:
+                    print("已有一个同步正在进行，本次跳过。")
+                    return
+                with connect(db_path) as conn:
+                    service = SyncService(conn, Gateway())
+                    warning = service.account_warning()
+                    if warning:
+                        print(f"⚠️  {warning}", file=sys.stderr)
+                    if args.limit is not None and args.limit < 1:
+                        raise WereadVaultError("--limit 必须是正整数。")
+                    if args.scope == "shelf":
+                        count = service.shelf()
+                    elif args.scope == "books":
+                        count = service.books()
+                    elif args.scope == "notes":
+                        count = service.notes(args.full_notes, args.limit)
+                    elif args.scope == "stats":
+                        count = service.stats()
+                    elif args.scope == "info":
+                        count = service.info(args.limit, args.refresh)
+                    elif args.scope == "popular":
+                        count = service.popular(args.limit, args.refresh)
+                    else:
+                        count = service.all(args.full_notes, args.limit)
             if isinstance(count, dict):
                 parts = [f"书架 {count['shelf']}", f"书目 {count['books']}",
                          f"笔记 {count['notes']}", f"统计 {count['stats']}"]

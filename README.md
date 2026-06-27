@@ -179,9 +179,11 @@ weread-vault schedule --off                  # 关闭
 > 提示：API Key 需已保存到**本机配置**（在 Dashboard「同步设置」里粘贴保存即可），定时任务才读得到；只放在环境变量里的 Key，定时任务读不到。CLI 也会在你没存配置 Key 时给出提醒。
 
 <details>
-<summary>进阶：用 AI agent（OpenClaw）跑定时同步</summary>
+<summary>进阶（可选）：用 AI agent（OpenClaw）跑定时同步</summary>
 
-如果你已经在用 OpenClaw，也可以让 agent 每天唤起一个隔离任务跑同步并导出，顺带把失败日志交给 agent 处理：
+**已开启上面的「每天自动同步」就不需要这段了。** 它只留给已经在用 OpenClaw、想让 agent 顺带处理失败日志的人。就算把它也设成 07:00、和内置每天同步撞在一起也没关系：`weread-vault sync` 带了跨进程互斥锁，同一时刻只会跑一个，另一个自动跳过、不会损坏数据库。
+
+如果你已经在用 OpenClaw，可以让 agent 每天唤起一个隔离任务跑同步并导出，顺带把失败日志交给 agent 处理：
 
 ```json
 {
