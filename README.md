@@ -62,11 +62,11 @@ pipx install weread-vault         # 或常驻安装，weread-vault 命令上 PAT
 
 ## 📊 阅读统计
 
-按本周 / 本月 / 今年 / 全部切换，所有数字随之更新；GitHub 式热力图展示每日划线活跃度（多年）。全部来自历史快照，随每次同步累积，能看到长期趋势。
+按本周 / 本月 / 今年 / 全部切换，所有数字随之更新。全部来自历史快照，随每次同步累积，能看到长期趋势。
 
-![阅读统计](docs/assets/reading-stats.png)
+![阅读统计](docs/assets/stats-all.png)
 
-GitHub 式划线热力图，跨多年一目了然：
+GitHub 式划线热力图，按每日划线活跃度展示，跨多年一目了然：
 
 ![划线热力图](docs/assets/stats-heatmap.png)
 

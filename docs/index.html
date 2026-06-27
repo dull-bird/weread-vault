@@ -189,6 +189,34 @@ weread-vault serve --open</code></pre>
 </div>
 </section>
 
+<section>
+<div class="wrap">
+<h2>常用命令</h2>
+<p class="h2sub">装好后在终端就能用 <code>weread-vault</code>；也可以让对接了 Skill 的 AI 直接帮你跑。</p>
+<div class="copybox">
+<button class="copybtn" type="button" data-copy="cmds">复制</button>
+<pre><code id="cmds">weread-vault sync                  # 日常增量同步（书架 + 笔记 + 统计）
+weread-vault open 三体              # 在微信读书打开一本书（macOS 唤起 App，否则网页版）
+weread-vault status                # 本地库数量与最近同步状态
+weread-vault serve --open          # 打开本地网页 Dashboard
+weread-vault schedule --daily 07:00   # 每天 07:00 自动同步（系统定时器，不常驻）
+
+# 导出到知识库
+weread-vault export markdown --out ~/Documents/weread-notes
+weread-vault export flomo  --webhook "$FLOMO_WEBHOOK"
+weread-vault export notion --token "$NOTION_TOKEN" --database "$NOTION_DATABASE_ID"
+
+# 给 AI 用：直查本地库
+weread-vault query "SELECT title,author FROM books ORDER BY rating DESC LIMIT 10"
+weread-vault stats                 # 阅读统计 JSON（供 AI 分析）
+
+# 备份 / 换账号
+weread-vault backup --out ~/Backups/weread-vault.db
+weread-vault reset --yes           # 清空本地阅读数据（不影响 API Key）</code></pre>
+</div>
+</div>
+</section>
+
 <section style="background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
 <div class="wrap">
 <h2>相比官方微信读书 Skill 的优势</h2>
