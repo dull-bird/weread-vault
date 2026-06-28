@@ -999,11 +999,21 @@ def make_handler(db_path: Path):
                         if kind == "similar":
                             row = conn.execute("SELECT author FROM books WHERE book_id=?", (book_id,)).fetchone()
                             author = (row["author"] if row else "") or ""
+                            # Prefer pre-fetched recommendations (same-author store results), then
+                            # fall back to same-author books already in the sample shelf.
+                            has_table = conn.execute(
+                                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sample_similar'"
+                            ).fetchone()
                             books = conn.execute(
-                                """SELECT book_id,title,author,cover FROM books
-                                WHERE author=? AND book_id<>? ORDER BY sort DESC LIMIT 12""",
-                                (author, book_id),
-                            ).fetchall()
+                                "SELECT rel_book_id AS book_id,title,author,cover FROM sample_similar WHERE book_id=?",
+                                (book_id,),
+                            ).fetchall() if has_table else []
+                            if not books:
+                                books = conn.execute(
+                                    """SELECT book_id,title,author,cover FROM books
+                                    WHERE author=? AND book_id<>? ORDER BY sort DESC LIMIT 12""",
+                                    (author, book_id),
+                                ).fetchall()
                             _json(self, {"books": [dict(row) | {"weread_url": weread_url(row["book_id"])} for row in books], "by": author})
                             return
                         if kind == "reviews":
