@@ -56,16 +56,14 @@ class Gateway:
             with urllib.request.urlopen(request, timeout=30) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.URLError as error:
-            # Some Linux builds provide Python without the _ssl extension. urllib then
-            # reports HTTPS as an unknown URL type even though the OS has a TLS-capable curl.
-            if "unknown url type: https" not in str(error).lower():
+            if not _can_retry_with_curl(error):
                 raise
             return self._post_with_curl(payload)
 
     def _post_with_curl(self, payload: dict[str, Any]) -> dict[str, Any]:
         curl = shutil.which("curl")
         if not curl:
-            raise GatewayError("当前 Python 不支持 HTTPS，且未找到 curl；请安装带 SSL 的 Python 或 curl。")
+            raise GatewayError("当前 Python HTTPS/证书环境不可用，且未找到 curl；请安装带 SSL 证书的 Python 或 curl。")
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False) as body_file:
             body_file.write(json.dumps(payload, ensure_ascii=False))
             body_path = body_file.name
@@ -97,3 +95,14 @@ class Gateway:
                 os.unlink(body_path)
             except OSError:
                 pass
+
+
+def _can_retry_with_curl(error: BaseException) -> bool:
+    detail = str(error).lower()
+    # Some Linux builds provide Python without the _ssl extension. urllib then
+    # reports HTTPS as an unknown URL type even though the OS has a TLS-capable curl.
+    if "unknown url type: https" in detail:
+        return True
+    # PyInstaller / embedded Python builds can have a working _ssl module but no
+    # usable CA bundle. curl often still verifies successfully via the OS trust store.
+    return "certificate_verify_failed" in detail
