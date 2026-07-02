@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>WeRead Vault — 微信读书的本地数据库</title>
 <meta name="description" content="微信读书的本地数据库，一个带 Agent Skill 的 CLI：把书架、划线、想法、阅读统计归档进本机 SQLite，可查询、可视化、可导出，AI 直接读。">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta property="og:image" content="assets/logo.png">
 <style>
 :root{--bg:#f6f7f9;--fg:#11161d;--muted:#69707b;--line:#e7e9ee;--card:#fff;--brand:#1556e0;--brand2:#7c3aed}
 @media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#8b949e;--line:#21262d;--card:#161b22}}
@@ -13,7 +16,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-appl
 a{color:var(--brand);text-decoration:none}
 .wrap{max-width:980px;margin:0 auto;padding:0 22px}
 header{text-align:center;padding:70px 22px 32px;background:radial-gradient(900px 380px at 50% -120px,color-mix(in srgb,var(--brand) 16%,transparent),transparent)}
-.logo{font-size:34px;font-weight:800;letter-spacing:-.03em}.logo .d{color:var(--brand)}
+.logo{display:inline-flex;align-items:center;justify-content:center;gap:12px;font-size:34px;font-weight:800;letter-spacing:0}.logo img{width:52px;height:52px;border-radius:12px;box-shadow:0 12px 28px rgba(17,22,29,.18)}.logo .d{color:var(--brand)}
 .tag{font-size:20px;font-weight:600;max-width:680px;margin:18px auto 6px}
 .sub{color:var(--muted);max-width:840px;margin:0 auto}
 .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:28px 0 6px}
@@ -84,7 +87,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 22px 60p
 <body>
 <header>
 <div class="wrap">
-<div class="logo">WeRead <span class="d">Vault</span></div>
+<div class="logo"><img src="assets/logo.png" alt="" aria-hidden="true"><span>WeRead <span class="d">Vault</span></span></div>
 <p class="tag">微信读书的本地数据库，一个带 Agent Skill 的 CLI。</p>
 <p class="sub">把书架、划线、想法、阅读统计归档进本机 SQLite —— 可查询、可视化、可导出，AI 直接读，数据不上传。</p>
 <div class="cta">
@@ -142,7 +145,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 22px 60p
 <div class="copybox">
 <button class="copybtn" type="button" data-copy="agent-install-prompt">复制</button>
 <pre><code id="agent-install-prompt">请帮我装好 WeRead Vault 并启用它的 Skill：
-1) 在 macOS / Windows / Linux 上用 pipx install weread-vault（如果没有 pipx，就用 uvx weread-vault serve --open 先跑起来）
+1) 在 macOS / Windows / Linux 上用 pipx install weread-vault（没有 pipx 就先 python -m pip install --user pipx）
 2) 把 https://github.com/dull-bird/weread-vault 的 skills/weread-vault-cli 装成你的 Skill
 3) 跑 weread-vault serve --open，打开后提醒我去 https://weread.qq.com/r/weread-skills
    取微信读书 API Key 粘贴同步。数据只存我本机，别把 key 写进任何文件。</code></pre>
@@ -154,9 +157,9 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 22px 60p
 </div>
 <div class="way">
 <h3>③ 命令行 + Skill（macOS / Windows / Linux）</h3>
-<pre><code>pipx install weread-vault        # 或 uvx weread-vault serve --open
+<pre><code>pipx install weread-vault        # 一条命令，像 npm install -g
 weread-vault serve --open</code></pre>
-<p>给 agent 用就再装 Skill：仓库的 <a href="https://github.com/dull-bird/weread-vault/tree/main/skills/weread-vault-cli">skills/weread-vault-cli</a>。</p>
+<p>用 <b>pipx</b> 而不是 pip：它把工具装进独立环境、只把 <code>weread-vault</code> 挂上 PATH，不污染系统 Python（现代 macOS / Debian 还会禁止 <code>pip install</code>）——这就是装命令行工具的标准做法。没有 pipx 就先 <code>python -m pip install --user pipx</code>；想免安装试一次可用 <code>uvx weread-vault serve --open</code>。给 agent 用就再装 Skill：仓库的 <a href="https://github.com/dull-bird/weread-vault/tree/main/skills/weread-vault-cli">skills/weread-vault-cli</a>。</p>
 </div>
 </div>
 </div>
@@ -223,12 +226,17 @@ weread-vault schedule --daily 07:00    # 每天 07:00 自动同步（系统定�
 weread-vault status                   # 本地库数量与最近同步状态
 weread-vault serve --open             # 打开本地网页 Dashboard
 
-# 导出到知识库
+# 导出到知识库（手动导出一次）
 weread-vault export markdown --out ~/Documents/weread-notes
-weread-vault sync popular &amp;&amp; \
-  weread-vault export markdown --out ~/Documents/weread-notes --with-popular   # 顺带合并他人热门划线（去重）
+weread-vault export markdown --out ~/Documents/weread-notes --with-popular   # 合并他人热门划线（随同步已自动拉取，去重）
 weread-vault export flomo  --webhook "$FLOMO_WEBHOOK"
 weread-vault export notion --token "$NOTION_TOKEN" --database "$NOTION_DATABASE_ID"
+
+# 自动导出：配一次，之后每次同步（含定时同步）自动导出到所有目的地
+weread-vault export config --markdown "~/Documents/Obsidian Vault/微信读书"
+weread-vault export config --flomo "$FLOMO_WEBHOOK"
+weread-vault export config --show     # 查看已配置目的地（密钥打码）
+weread-vault log                      # 同步 / 导出历史（含失败原因）
 
 # 给 AI 用：直查本地库
 weread-vault query "SELECT title,author FROM books ORDER BY rating DESC LIMIT 10"

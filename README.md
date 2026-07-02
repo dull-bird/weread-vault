@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo.png" alt="WeRead Vault logo" width="96">
+</p>
+
 # WeRead Vault
 
 **微信读书的本地数据库 —— 一个带 Agent Skill 的 CLI。** 把书架、划线、想法、阅读统计归档进本机 SQLite，可查询、可视化、可导出，AI 直接读，数据不上传。
@@ -32,7 +36,7 @@
 
 ```text
 请帮我装好 WeRead Vault 并启用它的 Skill：
-1) pipx install weread-vault（没有 pipx 就用 uvx weread-vault serve --open）
+1) pipx install weread-vault（没有 pipx 就先 python -m pip install --user pipx）
 2) 把 https://github.com/dull-bird/weread-vault 的 skills/weread-vault-cli 装成你的 Skill
 3) 跑 weread-vault serve --open，打开后提醒我去 https://weread.qq.com/r/weread-skills
    取微信读书 API Key 粘贴同步。数据只存我本机，别把 key 写进任何文件。
@@ -51,10 +55,14 @@
 
 ### ③ 命令行 + Skill（开发者，macOS / Windows / Linux，需 Python 3.10+）
 
+一条命令即可，就像 `npm install -g`：
+
 ```bash
-uvx weread-vault serve --open     # 免安装、临时跑
-pipx install weread-vault         # 或常驻安装，weread-vault 命令上 PATH
+pipx install weread-vault          # 装好后 weread-vault 命令直接可用
+weread-vault serve --open
 ```
+
+> 为什么用 pipx 而不是 pip？pipx 把这个工具装进独立环境、只把 `weread-vault` 命令挂上 PATH，不污染系统 Python、也不和别的包抢依赖——这正是安装命令行工具的标准做法（现代 macOS / Debian 的系统 Python 默认还会**禁止** `pip install`）。没有 pipx 就先 `python -m pip install --user pipx`。想先试试不安装可以用 `uvx weread-vault serve --open` 临时跑一次。
 
 给 agent 用就再装 Skill：仓库的 [`skills/weread-vault-cli`](skills/weread-vault-cli/SKILL.md)。要从源码：`git clone --recurse-submodules … && pip install -e .`。
 
@@ -95,12 +103,18 @@ weread-vault schedule --daily 07:00    # 每天 07:00 自动同步（系统定�
 weread-vault status                   # 本地库数量与最近同步状态
 weread-vault serve --open             # 打开本地网页 Dashboard
 
-# 导出到知识库
+# 导出到知识库（手动导出一次）
 weread-vault export markdown --out ~/Documents/weread-notes
-weread-vault sync popular && \
-  weread-vault export markdown --out ~/Documents/weread-notes --with-popular   # 顺带合并他人热门划线（去重）
+weread-vault export markdown --out ~/Documents/weread-notes --with-popular   # 合并他人热门划线（随同步已自动拉取，去重）
 weread-vault export flomo  --webhook "$FLOMO_WEBHOOK"
 weread-vault export notion --token "$NOTION_TOKEN" --database "$NOTION_DATABASE_ID"
+
+# 自动导出：配置一次，之后每次 sync（含定时同步）自动导出到所有已配置目的地
+weread-vault export config --markdown "~/Documents/Obsidian Vault/微信读书"
+weread-vault export config --flomo "$FLOMO_WEBHOOK"
+weread-vault export config --notion-token "$NOTION_TOKEN" --notion-db "$NOTION_DATABASE_ID"
+weread-vault export config --show     # 查看已配置目的地（密钥打码）
+weread-vault log                      # 查看同步 / 导出历史（含失败原因）
 
 # 给 AI 用：直查本地库
 weread-vault query "SELECT title,author FROM books ORDER BY rating DESC LIMIT 10"
@@ -182,7 +196,7 @@ weread-vault stats              # 已解析统计 JSON（周期 / 热力图 / �
 ```bash
 weread-vault schedule --daily 07:00          # 每天 07:00 自动同步
 weread-vault schedule --daily 07:00 \
-  --export "~/Documents/Obsidian Vault/微信读书"   # 同步后顺便导出到 Obsidian
+  --export "~/Documents/Obsidian Vault/微信读书"   # 同步后自动导出到 Obsidian
 weread-vault schedule --status               # 查看状态
 weread-vault schedule --off                  # 关闭
 ```
@@ -190,6 +204,28 @@ weread-vault schedule --off                  # 关闭
 它在底层注册系统**原生定时器**（macOS launchd / Windows 任务计划 / Linux cron），到点唤起 `weread-vault` 同步一次就退出，省心又稳。
 
 **桌面 App 用户**更简单：在「同步设置」里打开「每天自动同步」开关、选个时间即可，全程不碰命令行。
+
+### 🔁 同步后自动导出
+
+导出目的地**配置一次**，之后**每次同步**（手动或定时）都会自动导出到所有已配置的目的地——不用每天手动跑导出：
+
+```bash
+weread-vault export config --markdown "~/Documents/Obsidian Vault/微信读书"
+weread-vault export config --flomo "$FLOMO_WEBHOOK"
+weread-vault export config --notion-token "$NOTION_TOKEN" --notion-db "$NOTION_DATABASE_ID"
+weread-vault export config --show    # 查看已配置目的地（密钥打码）
+```
+
+- **Markdown / Obsidian**：幂等，只重写有变化的文件，不惊动 iCloud / Obsidian 索引。
+- **flomo / Notion**：这两个是「只增不改」的目的地，所以自动导出是**增量**的——只推送自上次导出后有新笔记的书，定时任务不会每天把整个书架重灌一遍。首次会先补齐全量，之后只发增量。
+- 想临时跳过：`weread-vault sync --no-export`。桌面 App 的「同步」按钮同样会自动导出。
+
+每次同步和导出都记进日志，随时回看（含失败原因）：
+
+```bash
+weread-vault log            # 时间 · 范围 · 耗时 · 结果
+weread-vault log --json     # 供 AI 读取
+```
 
 > 提示：API Key 需已保存到**本机配置**（在 Dashboard「同步设置」里粘贴保存即可），定时任务才读得到；只放在环境变量里的 Key，定时任务读不到。CLI 也会在你没存配置 Key 时给出提醒。
 

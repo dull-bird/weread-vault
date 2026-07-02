@@ -19,6 +19,7 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
+SetupIconFile=icons\weread-vault.ico
 UninstallDisplayIcon={app}\weread-vault.exe
 
 [Files]

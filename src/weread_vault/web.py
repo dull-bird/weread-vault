@@ -838,15 +838,21 @@ async function loadSchedule(){const box=e('sched-box');let s;try{s=await fetch('
  e('sched-on').onclick=async()=>{const m=e('sched-msg');m.className='msg';m.textContent='设置中…';try{let r=await fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({time:e('sched-time').value})});let b=await r.json();if(!r.ok)throw new Error(b.error||'失败');if(b.warning){m.className='msg warn';m.textContent='已开启，但 '+b.warning}else{m.className='msg ok';m.textContent='已开启每天 '+b.time+' 自动同步。'}setTimeout(loadSchedule,1400)}catch(err){m.className='msg err';m.textContent=err.message||String(err)}};}
 async function loadExport(){const box=e('export-box');let s;try{s=await fetch('/api/export-status').then(r=>r.json())}catch(_){box.innerHTML='';return}
  const n=s.books_with_notes||0;
- box.innerHTML=`<div class=clibox><b>导出 · 批量同步到其它工具</b><p class=dzhint>把 ${n} 本有笔记的书一次性导出。每条划线、想法都带书名与章节；可重复运行，已存在的内容会增量更新。</p>
- <div class=xrow><span class=xt>📝 Markdown</span><input id='x-md' class='xin' style='flex:1' placeholder='导出目录，如 ~/Documents/Obsidian/微信读书' value="${esc(s.markdown_dir||'')}"><label class=xck><input type='checkbox' id='x-md-pop'>合并热门划线</label><button id='x-md-go' class='ghost' type='button'>导出</button></div>
- <div class=xrow><span class=xt>🔖 flomo</span><input id='x-flomo' class='xin' style='flex:1' type='password' autocomplete='off' placeholder="${s.flomo_saved?'已保存（留空沿用）':'flomo 的 API / Webhook'}"><label class=xck><input type='checkbox' id='x-flomo-save' ${s.flomo_saved?'checked':''}>记住</label><button id='x-flomo-go' class='ghost' type='button'>导出到 flomo</button></div>
- <div class=xrow><span class=xt>🗂 Notion</span><input id='x-nt-token' class='xin' style='flex:1' type='password' autocomplete='off' placeholder="${s.notion_saved?'token 已保存（留空沿用）':'集成 token'}"><input id='x-nt-db' class='xin' style='width:150px' placeholder='数据库 ID'><label class=xck><input type='checkbox' id='x-nt-save' ${s.notion_saved?'checked':''}>记住</label><button id='x-nt-go' class='ghost' type='button'>导出到 Notion</button></div>
+ box.innerHTML=`<div class=clibox><b>导出 · 批量同步到其它工具</b><p class=dzhint>把 ${n} 本有笔记的书一次性导出。每条划线、想法都带书名与章节；可重复运行，已存在的内容会增量更新。勾选 <b>同步后自动导出</b> 后，之后每次同步（含定时同步）都会自动导出到该目的地——Markdown 只重写有变化的文件，flomo / Notion 只增量推送有新笔记的书。</p>
+ <div class=xrow><span class=xt>📝 Markdown</span><input id='x-md' class='xin' style='flex:1' placeholder='导出目录，如 ~/Documents/Obsidian/微信读书' value="${esc(s.markdown_dir||'')}"><label class=xck><input type='checkbox' id='x-md-pop'>合并热门划线</label><label class=xck title='之后每次同步自动导出到这个目录'><input type='checkbox' id='x-md-auto' ${s.markdown_auto?'checked':''}>同步后自动导出</label><button id='x-md-go' class='ghost' type='button'>立即导出</button></div>
+ <div class=xrow><span class=xt>🔖 flomo</span><input id='x-flomo' class='xin' style='flex:1' type='password' autocomplete='off' placeholder="${s.flomo_saved?'已保存（留空沿用）':'flomo 的 API / Webhook'}"><label class=xck><input type='checkbox' id='x-flomo-save' ${s.flomo_saved?'checked':''}>记住</label><label class=xck title='之后每次同步自动增量导出'><input type='checkbox' id='x-flomo-auto' ${s.flomo_auto?'checked':''}>同步后自动导出</label><button id='x-flomo-go' class='ghost' type='button'>立即导出</button></div>
+ <div class=xrow><span class=xt>🗂 Notion</span><input id='x-nt-token' class='xin' style='flex:1' type='password' autocomplete='off' placeholder="${s.notion_saved?'token 已保存（留空沿用）':'集成 token'}"><input id='x-nt-db' class='xin' style='width:150px' placeholder='数据库 ID'><label class=xck><input type='checkbox' id='x-nt-save' ${s.notion_saved?'checked':''}>记住</label><label class=xck title='之后每次同步自动增量导出'><input type='checkbox' id='x-nt-auto' ${s.notion_auto?'checked':''}>同步后自动导出</label><button id='x-nt-go' class='ghost' type='button'>立即导出</button></div>
  <div class=dzrow style='margin-top:10px'><span id='x-msg' class='msg'></span></div></div>`;
  const msg=e('x-msg');const run=async(btn,target,payload)=>{const old=btn.textContent;btn.disabled=true;btn.textContent='导出中…';msg.className='msg';msg.textContent='正在导出，请稍候（书多时较慢）…';try{let r=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target,...payload})});let b=await r.json();if(!r.ok)throw new Error(b.error||'失败');msg.className='msg ok';msg.textContent=`✓ 导出完成，共 ${b.count} 本`+(b.dir?`，已写入 ${b.dir}`:'。');}catch(err){msg.className='msg err';msg.textContent=err.message||String(err)}finally{btn.disabled=false;btn.textContent=old}};
+ // Toggle "auto-export after every sync"; passes along whatever creds are in the inputs so
+ // enabling and saving happen in one click. On failure, revert the checkbox to the truth.
+ const auto=async(cb,target,creds)=>{msg.className='msg';msg.textContent='保存中…';try{let r=await fetch('/api/export-auto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target,auto:cb.checked,...creds})});let b=await r.json();if(!r.ok)throw new Error(b.error||'失败');cb.checked=b.auto;msg.className='msg ok';msg.textContent=b.auto?`✓ 已开启 · 之后每次同步会自动导出到 ${target}。`:`已关闭 ${target} 的自动导出（凭据保留，仍可手动导出）。`;}catch(err){cb.checked=!cb.checked;msg.className='msg err';msg.textContent=err.message||String(err)}};
  e('x-md-go').onclick=()=>run(e('x-md-go'),'markdown',{dir:e('x-md').value,with_popular:e('x-md-pop').checked});
  e('x-flomo-go').onclick=()=>run(e('x-flomo-go'),'flomo',{webhook:e('x-flomo').value,save:e('x-flomo-save').checked});
- e('x-nt-go').onclick=()=>run(e('x-nt-go'),'notion',{token:e('x-nt-token').value,database:e('x-nt-db').value,save:e('x-nt-save').checked});}
+ e('x-nt-go').onclick=()=>run(e('x-nt-go'),'notion',{token:e('x-nt-token').value,database:e('x-nt-db').value,save:e('x-nt-save').checked});
+ e('x-md-auto').onchange=()=>auto(e('x-md-auto'),'markdown',{dir:e('x-md').value});
+ e('x-flomo-auto').onchange=()=>auto(e('x-flomo-auto'),'flomo',{webhook:e('x-flomo').value});
+ e('x-nt-auto').onchange=()=>auto(e('x-nt-auto'),'notion',{token:e('x-nt-token').value,database:e('x-nt-db').value});}
 async function boot(){const shot=PARAMS.get('shot');if(shot){document.body.classList.add('shot',shot==='heatmap'?'shot-heat':'shot-stats')}await loadSettings();await load();await loadStats();await loadCli();await loadSchedule();await loadExport();const v=PARAMS.get('view');if(v)showView(v);const bid=PARAMS.get('book');if(bid)await openBook(bid,null,PARAMS.get('tab'));document.body.dataset.ready='1'}
 boot();</script></body></html>""".encode("utf-8")
 
@@ -897,6 +903,7 @@ def make_handler(db_path: Path):
                     _json(self, state)
                 elif parsed.path == "/api/export-status":
                     from .config import get_config
+                    from .autoexport import auto_enabled
                     default_md = str(Path.home() / "Documents" / "微信读书笔记")
                     _json(self, {
                         "markdown_dir": get_config("export_markdown_dir") or default_md,
@@ -905,6 +912,9 @@ def make_handler(db_path: Path):
                             (get_config("notion_token") or os.environ.get("NOTION_TOKEN"))
                             and (get_config("notion_database") or os.environ.get("NOTION_DATABASE_ID"))
                         ),
+                        "markdown_auto": auto_enabled("markdown"),
+                        "flomo_auto": auto_enabled("flomo"),
+                        "notion_auto": auto_enabled("notion"),
                         "books_with_notes": conn.execute(
                             "SELECT COUNT(*) FROM books WHERE total_notes>0").fetchone()[0],
                     })
@@ -1236,6 +1246,49 @@ def make_handler(db_path: Path):
                 except Exception as error:  # noqa: BLE001 — 网络/第三方 API 失败 → 页面提示
                     _json(self, {"error": str(error)}, HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
+            if parsed.path == "/api/export-auto":
+                # Toggle "auto-export after every sync" for one destination. Turning it on
+                # saves whatever credentials are supplied (or reuses saved ones) and requires
+                # them to be present; turning it off leaves credentials intact for manual export.
+                from .config import get_config, save_config
+                from .autoexport import auto_enabled, set_auto
+                try:
+                    body = _read_json_body(self)
+                    target = str(body.get("target", ""))
+                    on = bool(body.get("auto"))
+                    if target not in ("markdown", "flomo", "notion"):
+                        raise ValueError("未知的导出目标。")
+                    if on:
+                        if target == "markdown":
+                            raw = str(body.get("dir", "")).strip()
+                            if raw:
+                                save_config("export_markdown_dir", str(Path(raw).expanduser()))
+                            if not get_config("export_markdown_dir"):
+                                raise ValueError("请先填写导出目录，再开启自动导出。")
+                        elif target == "flomo":
+                            webhook = str(body.get("webhook", "")).strip()
+                            if webhook:
+                                save_config("flomo_webhook", webhook)
+                            if not (get_config("flomo_webhook") or os.environ.get("FLOMO_WEBHOOK")):
+                                raise ValueError("请先填写 flomo 的 API（Webhook），再开启自动导出。")
+                        else:  # notion
+                            token = str(body.get("token", "")).strip()
+                            database = str(body.get("database", "")).strip()
+                            if token:
+                                save_config("notion_token", token)
+                            if database:
+                                save_config("notion_database", database)
+                            has_token = get_config("notion_token") or os.environ.get("NOTION_TOKEN")
+                            has_db = get_config("notion_database") or os.environ.get("NOTION_DATABASE_ID")
+                            if not (has_token and has_db):
+                                raise ValueError("请先填写 Notion 集成 token 与数据库 ID，再开启自动导出。")
+                    set_auto(target, on)
+                    _json(self, {"status": "ok", "target": target, "auto": auto_enabled(target)})
+                except ValueError as error:
+                    _json(self, {"error": str(error)}, HTTPStatus.BAD_REQUEST)
+                except Exception as error:  # noqa: BLE001
+                    _json(self, {"error": str(error)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
             if parsed.path == "/api/settings/clear-key":
                 from .config import clear_api_key
                 clear_api_key()
@@ -1335,6 +1388,14 @@ def make_handler(db_path: Path):
                         counts["notes"] = service.notes(full=(mode == "full"))
                         emit({"line": "同步阅读统计…"})
                         counts["stats"] = service.stats()
+                        emit({"line": "同步他人热门划线（增量，用于导出合并）…"})
+                        counts["popular"] = service.popular()
+                        # Fan out to every configured auto-export destination, same as CLI sync,
+                        # so the dashboard 同步 button keeps Obsidian/flomo/Notion current too.
+                        from .autoexport import configured_targets, run_auto_exports
+                        if configured_targets():
+                            emit({"line": "同步后自动导出…"})
+                            run_auto_exports(conn, report=lambda message: emit({"line": message}))
                         emit({"done": True, "counts": counts})
             except _StopSync:
                 pass  # the busy message was already emitted

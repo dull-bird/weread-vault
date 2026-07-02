@@ -143,7 +143,12 @@ class SyncService:
         removed = self.reconcile()  # drop books from a previous account / removed from shelf
         notes = self.notes(full_notes, note_limit)
         stats = self.stats()
-        return {"shelf": shelf, "books": books, "removed": removed, "notes": notes, "stats": stats}
+        # Other readers' popular highlights ride along with the normal sync (incremental: only
+        # books that don't have them yet), so `--with-popular` export just works with no separate
+        # `sync popular` step. Only the first sync pays the full cost; later runs fetch a few.
+        popular = self.popular()
+        return {"shelf": shelf, "books": books, "removed": removed, "notes": notes,
+                "stats": stats, "popular": popular}
 
     def reconcile(self) -> int:
         return self._run("reconcile", self._reconcile)

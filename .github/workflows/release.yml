@@ -34,7 +34,7 @@ jobs:
 
       - name: Build Windows .exe
         if: runner.os == 'Windows'
-        run: pyinstaller --onefile --name weread-vault --collect-submodules weread_vault packaging/launch.py
+        run: pyinstaller --onefile --name weread-vault --icon packaging/icons/weread-vault.ico --collect-submodules weread_vault packaging/launch.py
 
       - name: Build Windows installer
         if: runner.os == 'Windows'
@@ -52,7 +52,7 @@ jobs:
           # CLI binary for terminal users (sync / update / …)
           pyinstaller --onefile --name weread-vault-macos --collect-submodules weread_vault packaging/launch.py
           # Double-clickable .app, ad-hoc signed (so it runs on Apple Silicon), packaged into a .dmg
-          pyinstaller --noconfirm --windowed --name "WeRead Vault" --collect-submodules weread_vault packaging/launch.py
+          pyinstaller --noconfirm --windowed --name "WeRead Vault" --icon packaging/icons/weread-vault.icns --collect-submodules weread_vault packaging/launch.py
           codesign --force --deep --sign - "dist/WeRead Vault.app"
           hdiutil create -volname "WeRead Vault" -srcfolder "dist/WeRead Vault.app" -ov -format UDZO "dist/weread-vault-macos.dmg"
 

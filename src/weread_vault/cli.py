@@ -152,6 +152,8 @@ def parser() -> argparse.ArgumentParser:
     sync.add_argument("--full-notes", action="store_true", help="忽略变更水位，重新同步所有有笔记的书")
     sync.add_argument("--refresh", action="store_true", help="sync info 专用：重抓所有书的富信息（含简介），不只补缺")
     sync.add_argument("--limit", type=int, help="最多同步多少本笔记书；适合首次测试或分批同步")
+    sync.add_argument("--no-export", dest="no_export", action="store_true",
+                      help="本次同步后不触发已配置的自动导出（Obsidian/flomo/Notion）")
     sub.add_parser("status", help="显示本地库状态")
     reset = sub.add_parser("reset", help="清空本机阅读数据（换账号前用；不影响 API Key）")
     reset.add_argument("--yes", action="store_true", help="跳过确认直接清空")
@@ -181,6 +183,21 @@ def parser() -> argparse.ArgumentParser:
     notion.add_argument("--token", help="Notion 集成 token；默认读 NOTION_TOKEN")
     notion.add_argument("--database", help="Notion 数据库 ID；默认读 NOTION_DATABASE_ID")
     notion.add_argument("--limit", type=int, help="最多导出多少本")
+    export_cfg = export_sub.add_parser(
+        "config", help="配置自动导出目的地（每次同步后自动导出到已配置的目的地）")
+    export_cfg.add_argument("--markdown", metavar="DIR", help="设置 Markdown/Obsidian 导出目录")
+    export_cfg.add_argument("--flomo", metavar="WEBHOOK", help="设置 flomo 专属 API")
+    export_cfg.add_argument("--notion-token", dest="notion_token", metavar="TOKEN", help="设置 Notion 集成 token")
+    export_cfg.add_argument("--notion-db", dest="notion_db", metavar="ID", help="设置 Notion 数据库 ID")
+    export_cfg.add_argument("--enable", choices=("markdown", "flomo", "notion"),
+                            help="开启某个目的地的自动导出（凭据不变）")
+    export_cfg.add_argument("--disable", choices=("markdown", "flomo", "notion"),
+                            help="关闭某个目的地的自动导出（保留凭据，仍可手动导出）")
+    export_cfg.add_argument("--clear", choices=("markdown", "flomo", "notion"), help="清除某个目的地的配置（含凭据与自动开关）")
+    export_cfg.add_argument("--show", action="store_true", help="查看已配置的自动导出目的地（密钥打码）")
+    log_p = sub.add_parser("log", help="查看同步/导出历史（读取 sync_runs）")
+    log_p.add_argument("--limit", type=int, default=20, help="最多显示多少条（默认 20）")
+    log_p.add_argument("--json", dest="as_json", action="store_true", help="输出 JSON（供 AI 读取）")
     backup = sub.add_parser("backup", help="创建 SQLite 一致性备份")
     backup.add_argument("--out", required=True, help="备份文件路径")
     serve_parser = sub.add_parser("serve", help="打开本地网页预览")
@@ -303,6 +320,104 @@ def _print_status(path: Path) -> None:
             print(f"最近失败同步：{data['last_failure']}（失败的书不会推进同步水位）")
 
 
+def _mask(secret: str) -> str:
+    """Show only the tail of a secret so a user can recognise it without exposing it."""
+    if not secret:
+        return "—"
+    return f"…{secret[-4:]}" if len(secret) > 4 else "已设置"
+
+
+def _export_config(args: argparse.Namespace) -> None:
+    """Save / clear / show the auto-export destinations used after each sync."""
+    from .config import get_config, save_config
+    from .autoexport import auto_enabled, configured_targets, set_auto
+
+    changed = False
+    # Setting a destination's credentials via the CLI implies you want it auto-exported.
+    if args.markdown:
+        save_config("export_markdown_dir", str(Path(args.markdown).expanduser()))
+        set_auto("markdown", True)
+        changed = True
+    if args.flomo:
+        save_config("flomo_webhook", args.flomo)
+        set_auto("flomo", True)
+        changed = True
+    if args.notion_token or args.notion_db:
+        if args.notion_token:
+            save_config("notion_token", args.notion_token)
+        if args.notion_db:
+            save_config("notion_database", args.notion_db)
+        set_auto("notion", True)
+        changed = True
+    if args.enable:
+        set_auto(args.enable, True)
+        print(f"已开启 {args.enable} 的同步后自动导出。")
+        changed = True
+    if args.disable:
+        set_auto(args.disable, False)
+        print(f"已关闭 {args.disable} 的自动导出（凭据保留，仍可手动导出）。")
+        changed = True
+    if args.clear:
+        if args.clear == "markdown":
+            save_config("export_markdown_dir", "")
+        elif args.clear == "flomo":
+            save_config("flomo_webhook", "")
+        else:
+            save_config("notion_token", "")
+            save_config("notion_database", "")
+        set_auto(args.clear, False)
+        print(f"已清除 {args.clear} 导出配置。")
+        changed = True
+
+    if changed and not args.show:
+        targets = configured_targets()
+        print("已保存。" + (f"同步后将自动导出到：{'、'.join(targets)}。" if targets else "当前没有开启自动导出的目的地。"))
+        return
+
+    # Default (or --show): report what is configured, secrets masked.
+    md = get_config("export_markdown_dir")
+    flomo = get_config("flomo_webhook")
+    token = get_config("notion_token")
+    database = get_config("notion_database")
+
+    def _line(label: str, value: str, target: str) -> str:
+        state = "自动" if auto_enabled(target) else ("仅手动" if value else "—")
+        return f"  {label}：{value or '未配置'}  [{state}]"
+
+    print("导出配置（[自动]=每次完整 sync 后触发；[仅手动]=已存凭据但不自动导出）：")
+    print(_line("Markdown/Obsidian", md, "markdown"))
+    print(_line("flomo", _mask(flomo) if flomo else "", "flomo"))
+    notion_val = ("token " + _mask(token) + " · db " + _mask(database)) if (token and database) else ""
+    print(_line("Notion", notion_val, "notion"))
+    targets = configured_targets()
+    print(f"  → 自动导出目的地：{'、'.join(targets) if targets else '（无）'}")
+
+
+def _print_log(path: Path, limit: int, as_json: bool) -> None:
+    import datetime as _dt
+
+    with connect(path) as conn:
+        rows = conn.execute(
+            """SELECT started_at, completed_at, status, scope, detail
+            FROM sync_runs ORDER BY id DESC LIMIT ?""",
+            (max(1, limit),),
+        ).fetchall()
+    if as_json:
+        _emit_json([dict(row) for row in rows])
+        return
+    if not rows:
+        print("还没有同步/导出记录。")
+        return
+    icon = {"success": "✓", "failed": "✗", "running": "…", "interrupted": "⚠"}
+    for row in rows:
+        when = _dt.datetime.fromtimestamp(row["started_at"]).strftime("%m-%d %H:%M")
+        secs = (row["completed_at"] - row["started_at"]) if row["completed_at"] else None
+        dur = f"{secs}s" if secs is not None else "—"
+        mark = icon.get(row["status"], "·")
+        detail = f" — {row['detail']}" if row["detail"] else ""
+        print(f"{mark} {when}  {row['scope']:<14} {dur:>5}{detail}")
+
+
 def main(argv: list[str] | None = None) -> None:
     args = parser().parse_args(argv)
     db_path = _path(args.db)
@@ -340,9 +455,18 @@ def main(argv: list[str] | None = None) -> None:
                         count = service.popular(args.limit, args.refresh)
                     else:
                         count = service.all(args.full_notes, args.limit)
+                    # A full sync fans out to every configured export destination while the
+                    # sync lock and connection are still held, so a daily job keeps Obsidian/
+                    # flomo/Notion current with no extra scheduling. Only the full `all` scope
+                    # triggers it; partial scopes (shelf/notes/…) don't.
+                    if args.scope == "all" and not args.no_export:
+                        from .autoexport import run_auto_exports
+                        run_auto_exports(conn)
             if isinstance(count, dict):
                 parts = [f"书架 {count['shelf']}", f"书目 {count['books']}",
                          f"笔记 {count['notes']}", f"统计 {count['stats']}"]
+                if count.get("popular"):
+                    parts.append(f"热门划线 {count['popular']}")
                 if count.get("removed"):
                     parts.append(f"清理旧书 {count['removed']}")
                 print("同步完成：" + "，".join(parts))
@@ -361,8 +485,19 @@ def main(argv: list[str] | None = None) -> None:
                 _emit_json(scheduler.status())
             elif args.daily:
                 hour, minute = scheduler.parse_time(args.daily)
-                info = scheduler.install(hour, minute, db=args.db, export=args.export)
+                if args.export:
+                    # Route --export through the auto-export config so the scheduled job is a
+                    # plain `sync` that fans out to every configured destination, not just this dir.
+                    from .config import save_config
+                    from .autoexport import set_auto
+                    save_config("export_markdown_dir", str(Path(args.export).expanduser()))
+                    set_auto("markdown", True)
+                info = scheduler.install(hour, minute, db=args.db)
                 print(f"已设置每天 {hour:02d}:{minute:02d} 自动同步（{info['platform']}）。")
+                from .autoexport import configured_targets
+                targets = configured_targets()
+                if targets:
+                    print(f"同步后将自动导出到：{'、'.join(targets)}。")
                 if api_key_source() == "env":
                     print("⚠️  你的 API Key 只在当前终端环境变量里——定时任务读不到。"
                           "请先用网页「同步设置」保存 Key 到本机配置，或 weread-vault 同步一次以保存。", file=sys.stderr)
@@ -419,6 +554,8 @@ def main(argv: list[str] | None = None) -> None:
                     _emit_json([dict(row) for row in rows])
             finally:
                 readonly.close()
+        elif args.command == "export" and args.export_command == "config":
+            _export_config(args)
         elif args.command == "export":
             _require_db(db_path)
             with connect(db_path) as conn:
@@ -448,6 +585,9 @@ def main(argv: list[str] | None = None) -> None:
             with connect(db_path) as source, sqlite3.connect(destination) as target:
                 source.backup(target)
             print(f"备份已创建：{destination}")
+        elif args.command == "log":
+            _require_db(db_path)
+            _print_log(db_path, args.limit, args.as_json)
         elif args.command == "serve":
             initialize(db_path)
             if not 1 <= args.port <= 65535:

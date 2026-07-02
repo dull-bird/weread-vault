@@ -29,13 +29,22 @@ def _http_post(url: str, payload: dict[str, Any], headers: dict[str, str], metho
     return json.loads(body) if body else {}
 
 
-def _books_with_notes(conn: sqlite3.Connection, limit: int | None) -> list[sqlite3.Row]:
-    sql = "SELECT * FROM books WHERE total_notes > 0 ORDER BY sort DESC"
+def _books_with_notes(
+    conn: sqlite3.Connection, limit: int | None, since_sort: int | None = None
+) -> list[sqlite3.Row]:
+    sql = "SELECT * FROM books WHERE total_notes > 0"
+    params: list[object] = []
+    if since_sort:
+        # flomo/Notion are append-only, so an auto-export after each sync only sends books
+        # whose note watermark advanced past the last export — no re-dumping the whole library.
+        sql += " AND sort > ?"
+        params.append(int(since_sort))
+    sql += " ORDER BY sort DESC"
     if limit is not None:
         if limit < 1:
             raise WereadVaultError("--limit 必须是正整数。")
         sql += f" LIMIT {int(limit)}"
-    return conn.execute(sql).fetchall()
+    return conn.execute(sql, params).fetchall()
 
 
 def _notes(conn: sqlite3.Connection, book_id: str) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
@@ -68,12 +77,17 @@ def _flomo_memo(book: sqlite3.Row, highlights: list[sqlite3.Row], thoughts: list
     return "\n".join(lines)
 
 
-def export_flomo(conn: sqlite3.Connection, webhook: str, limit: int | None = None, poster: Poster = _http_post) -> int:
-    """Send one flomo memo per book (title + highlights + thoughts + tags). Returns memos sent."""
+def export_flomo(conn: sqlite3.Connection, webhook: str, limit: int | None = None,
+                 poster: Poster = _http_post, since_sort: int | None = None) -> int:
+    """Send one flomo memo per book (title + highlights + thoughts + tags). Returns memos sent.
+
+    ``since_sort`` restricts to books whose note watermark advanced past that value,
+    used by auto-export so a daily run only sends what actually changed.
+    """
     if not webhook:
         raise WereadVaultError("缺少 flomo webhook。")
     sent = 0
-    for book in _books_with_notes(conn, limit):
+    for book in _books_with_notes(conn, limit, since_sort):
         highlights, thoughts = _notes(conn, book["book_id"])
         if not highlights and not thoughts:
             continue
@@ -113,19 +127,23 @@ _NOTION_CHUNK = 100
 
 
 def export_notion(
-    conn: sqlite3.Connection, token: str, database_id: str, limit: int | None = None, poster: Poster = _http_post
+    conn: sqlite3.Connection, token: str, database_id: str, limit: int | None = None,
+    poster: Poster = _http_post, since_sort: int | None = None
 ) -> int:
     """Create one Notion page per book under the given database. Returns pages created.
 
     Notion caps children at 100 per request, so books with more notes are written in
     batches: the first 100 blocks go in with the page, the rest are appended 100 at a
     time via PATCH .../blocks/{page_id}/children — nothing gets truncated.
+
+    ``since_sort`` restricts to books whose note watermark advanced past that value,
+    used by auto-export so a daily run only creates pages for what actually changed.
     """
     if not token or not database_id:
         raise WereadVaultError("缺少 Notion token 或 database id。")
     headers = {"Authorization": f"Bearer {token}", "Notion-Version": "2022-06-28"}
     created = 0
-    for book in _books_with_notes(conn, limit):
+    for book in _books_with_notes(conn, limit, since_sort):
         highlights, thoughts = _notes(conn, book["book_id"])
         if not highlights and not thoughts:
             continue

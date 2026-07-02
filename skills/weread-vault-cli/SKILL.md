@@ -1,6 +1,6 @@
 ---
 name: weread-vault-cli
-description: Use when a user wants to install WeRead Vault, sync WeRead books/highlights/thoughts/stats, inspect/search/export/back up the local SQLite database, open the local dashboard, open a specific book in the WeRead app or website, schedule a daily auto-sync, or export WeRead notes to Obsidian/Markdown/flomo/Notion with the weread-vault CLI. This skill covers safe local-first operations for Claude Code, Codex, OpenClaw, and similar AI agents; it requires WEREAD_API_KEY only for a sync.
+description: Use when a user wants to install WeRead Vault, sync WeRead books/highlights/thoughts/stats, inspect/search/export/back up the local SQLite database, open the local dashboard, open a specific book in the WeRead app or website, schedule a daily auto-sync, configure auto-export so each sync pushes to Obsidian/Markdown/flomo/Notion, view the sync/export history log, or export WeRead notes to Obsidian/Markdown/flomo/Notion with the weread-vault CLI. This skill covers safe local-first operations for Claude Code, Codex, OpenClaw, and similar AI agents; it requires WEREAD_API_KEY only for a sync.
 ---
 
 # WeRead Vault CLI
@@ -52,7 +52,7 @@ export WEREAD_API_KEY='…'
 weread-vault sync
 ```
 
-The normal sync is incremental: it fetches all notebook metadata, then refreshes only books whose remote `sort` marker advanced, then stores current reading-stat snapshots.
+The normal sync is incremental: it fetches all notebook metadata, then refreshes only books whose remote `sort` marker advanced, stores current reading-stat snapshots, and finally pulls other readers' popular highlights for any noted book that doesn't have them yet. Popular highlights ride along with every `sync all`, so `export --with-popular` just works — there is no separate `sync popular` step to remember (only the first sync pays the full popular-fetch cost; later runs fetch a few). Use `weread-vault sync popular --refresh` only to force a re-fetch of all popular highlights.
 
 Use a full note pass only to repair or verify a database:
 
@@ -121,12 +121,40 @@ Register an OS-native scheduled sync (launchd on macOS / Task Scheduler on Windo
 
 ```bash
 weread-vault schedule --daily 07:00                      # sync every day at 07:00
-weread-vault schedule --daily 07:00 --export "<dir>"     # …and export Markdown after each sync
+weread-vault schedule --daily 07:00 --export "<dir>"     # …and set that dir as the Markdown auto-export target
 weread-vault schedule --status                           # show current setting
 weread-vault schedule --off                              # cancel
 ```
 
 The API key must be saved to the local config (not just an env var) for the scheduled job to read it. Two syncs firing at once (e.g. this and an OpenClaw cron both at 07:00) are safe — `sync` holds a cross-process lock and the second one skips.
+
+## Auto-export after every sync
+
+Export destinations are configured **once** and then every full `weread-vault sync` (manual or scheduled) fans out to all of them — no per-destination scheduling. The web 导出 panel already saves whatever you export there; the CLI equivalent:
+
+```bash
+weread-vault export config --markdown "<Obsidian vault>/WereadNotes"   # Markdown/Obsidian dir
+weread-vault export config --flomo "$FLOMO_WEBHOOK"                    # flomo
+weread-vault export config --notion-token "$NOTION_TOKEN" --notion-db "$NOTION_DATABASE_ID"
+weread-vault export config --show                                      # list targets (secrets masked)
+weread-vault export config --clear flomo                               # remove a target
+```
+
+- Markdown is idempotent — a daily run rewrites only changed files (mtimes untouched, so no needless iCloud/Obsidian churn).
+- flomo and Notion are append-only, so auto-export is **incremental**: only books whose notes changed since the last export are sent (watermark on `books.sort`). The first auto-export after configuring seeds the whole library; after that it's just the deltas. A book you read every day produces one new memo/page per day — that's inherent to append-only targets. Use `weread-vault export flomo`/`notion` for a deliberate full re-export.
+- To skip auto-export for one manual sync: `weread-vault sync --no-export`.
+
+## Sync / export history
+
+Every sync and every auto-export is recorded. Read it back with:
+
+```bash
+weread-vault log                 # recent runs: time · scope · duration · detail
+weread-vault log --limit 50
+weread-vault log --json          # machine-readable, for an agent to inspect failures
+```
+
+Scopes look like `all`, `notes`, `stats`, `export:markdown`, `export:flomo`, `export:notion`. A `✗ failed` export row keeps its error message, so you can tell a user exactly which destination failed and why without re-running.
 
 ## WeRead API access (for agents)
 
@@ -204,10 +232,9 @@ For Obsidian, export into a folder inside the user's vault:
 weread-vault export markdown --out "/path/to/Obsidian Vault/WereadNotes"
 ```
 
-To merge other readers' popular highlights into the export, first sync them (one API call per noted book, incremental), then export with `--with-popular`. Overlapping highlights are folded into the user's own (annotated with the reader count); non-overlapping popular ones are listed separately, all in document order:
+To merge other readers' popular highlights into the export, just add `--with-popular` — they are already synced as part of the normal `sync` (no separate step). Overlapping highlights are folded into the user's own (annotated with the reader count); non-overlapping popular ones are listed separately, all in document order:
 
 ```bash
-weread-vault sync popular
 weread-vault export markdown --out "/path/to/Obsidian Vault/WereadNotes" --with-popular
 ```
 
