@@ -155,13 +155,13 @@ SELECT
   book_id,
   title,
   author,
-  progress,
+  COALESCE(progress, reading_progress) AS progress,
   reading_seconds,
   finish_time,
   read_update_time,
   CASE
-    WHEN finished = 1 OR progress = 100 THEN '已读'
-    WHEN progress BETWEEN 1 AND 99 THEN '在读'
+    WHEN finished = 1 OR COALESCE(progress, reading_progress) = 100 THEN '已读'
+    WHEN COALESCE(progress, reading_progress) BETWEEN 1 AND 99 THEN '在读'
     ELSE '未读'
   END AS status
 FROM books;

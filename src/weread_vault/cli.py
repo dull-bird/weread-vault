@@ -296,6 +296,8 @@ def _open_book(path: Path, query: str, *, pick: int | None = None, web: bool = F
 def _require_db(path: Path) -> None:
     if not path.exists():
         raise WereadVaultError(f"找不到本地数据库：{path}。先运行 weread-vault init 或 weread-vault sync。")
+    # Bring an existing database up to the current schema (idempotent: adds new columns/views only).
+    initialize(path)
 
 
 def _fmt_sync_time(value: int | str | None) -> str:
