@@ -133,13 +133,15 @@ The API key must be saved to the local config (not just an env var) for the sche
 Export destinations are configured **once** and then every full `weread-vault sync` (manual or scheduled) fans out to all of them — no per-destination scheduling. The web 导出 panel already saves whatever you export there; the CLI equivalent:
 
 ```bash
-weread-vault export config --markdown "<Obsidian vault>/WereadNotes"   # Markdown/Obsidian dir
+weread-vault export config --obsidian "<Obsidian vault>/WereadNotes"   # append-only Obsidian export with managed blocks
+weread-vault export config --markdown "<dir>/WereadNotes"              # full Markdown dir
 weread-vault export config --flomo "$FLOMO_WEBHOOK"                    # flomo
 weread-vault export config --notion-token "$NOTION_TOKEN" --notion-db "$NOTION_DATABASE_ID"
 weread-vault export config --show                                      # list targets (secrets masked)
 weread-vault export config --clear flomo                               # remove a target
 ```
 
+- Obsidian (`export obsidian` / `--obsidian`) uses managed blocks (`<!-- weread-vault:begin notes -->` … `<!-- weread-vault:end notes -->`) and item markers (`<!-- wv:<id> -->`): user handwritten text outside or inside the block is never overwritten, new highlights/thoughts are appended before the end marker, and items deleted by the user are not re-added (tracked in `obsidian_exported`). Frontmatter refreshes managed fields (`title, author, book_id, source, category, cover, isbn, publisher, rating, progress, status, reading_hours, finish_date, highlights, thoughts, reader_link, updated`) while preserving custom user fields.
 - Markdown is idempotent — a daily run rewrites only changed files (mtimes untouched, so no needless iCloud/Obsidian churn).
 - flomo and Notion are append-only, so auto-export is **incremental**: only books whose notes changed since the last export are sent (watermark on `books.sort`). The first auto-export after configuring seeds the whole library; after that it's just the deltas. A book you read every day produces one new memo/page per day — that's inherent to append-only targets. Use `weread-vault export flomo`/`notion` for a deliberate full re-export.
 - To skip auto-export for one manual sync: `weread-vault sync --no-export`.
@@ -229,9 +231,10 @@ weread-vault export notion --token "$NOTION_TOKEN" --database "$NOTION_DATABASE_
 
 flomo / Notion secrets come from `--webhook` / `--token` / `--database` or the env vars `FLOMO_WEBHOOK`, `NOTION_TOKEN`, `NOTION_DATABASE_ID`. Never paste these into chat or commit them. Both exporters only read the local database and POST the user's own notes to the user's own destination; confirm with the user before running an export that sends data to an external service.
 
-For Obsidian, export into a folder inside the user's vault:
+For Obsidian, export into a folder inside the user's vault (either incremental managed-block mode `export obsidian` or full `export markdown`):
 
 ```bash
+weread-vault export obsidian --out "/path/to/Obsidian Vault/WereadNotes"
 weread-vault export markdown --out "/path/to/Obsidian Vault/WereadNotes"
 ```
 

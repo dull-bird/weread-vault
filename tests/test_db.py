@@ -58,6 +58,8 @@ class MigrationTests(unittest.TestCase):
             self.assertIsNone(trow["chapter_idx"])
             ver = conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
             self.assertEqual(ver, SCHEMA_VERSION)
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            self.assertIn("obsidian_exported", tables)
 
         initialize(db_path)  # second run must not error (idempotent)
 

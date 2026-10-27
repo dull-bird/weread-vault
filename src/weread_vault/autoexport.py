@@ -21,13 +21,14 @@ from pathlib import Path
 
 from .config import get_config, save_config
 from .db import get_state, set_state
-from .export import export_markdown
+from .export import export_markdown, export_obsidian
 from .integrations import export_flomo, export_notion
 
 Reporter = Callable[[str], None]
 
 # The config keys the web 导出 panel already writes; the CLI reuses them verbatim.
 _MARKDOWN_DIR = "export_markdown_dir"
+_OBSIDIAN_DIR = "export_obsidian_dir"
 _FLOMO_WEBHOOK = "flomo_webhook"
 _NOTION_TOKEN = "notion_token"
 _NOTION_DATABASE = "notion_database"
@@ -35,12 +36,14 @@ _NOTION_DATABASE = "notion_database"
 # Every export target, and how to tell whether its credentials are saved. Auto-export is a
 # *separate* opt-in per target (`auto_export_<target>`), so a user can save a token for a
 # one-off manual export without it firing on every sync.
-TARGETS = ("markdown", "flomo", "notion")
+TARGETS = ("markdown", "obsidian", "flomo", "notion")
 
 
 def _has_credentials(target: str, config_path: Path | None = None) -> bool:
     if target == "markdown":
         return bool(get_config(_MARKDOWN_DIR, config_path))
+    if target == "obsidian":
+        return bool(get_config(_OBSIDIAN_DIR, config_path))
     if target == "flomo":
         return bool(get_config(_FLOMO_WEBHOOK, config_path))
     return bool(get_config(_NOTION_TOKEN, config_path) and get_config(_NOTION_DATABASE, config_path))
@@ -95,6 +98,11 @@ def run_auto_exports(
                 dest = Path(get_config(_MARKDOWN_DIR, config_path)).expanduser()
                 count = export_markdown(conn, dest)
                 detail = f"{count} 篇 → {dest}"
+            elif target == "obsidian":
+                dest = Path(get_config(_OBSIDIAN_DIR, config_path)).expanduser()
+                res = export_obsidian(conn, dest)
+                count = int(res)
+                detail = f"新建 {res.created} 篇，追加 {res.appended} 篇，新增 {res.new_items} 条 → {dest}"
             elif target == "flomo":
                 webhook = get_config(_FLOMO_WEBHOOK, config_path)
                 since = int(get_state(conn, "export_flomo_sort") or 0)

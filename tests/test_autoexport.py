@@ -141,6 +141,18 @@ class AutoExportTests(unittest.TestCase):
         autoexport.set_auto("flomo", True, self.cfg)
         self.assertEqual(autoexport.configured_targets(self.cfg), ["flomo"])
 
+    def test_obsidian_autoexport_target(self):
+        obs_dir = self.root / "obsidian_managed"
+        save_config("export_obsidian_dir", str(obs_dir), self.cfg)
+        autoexport.set_auto("obsidian", True, self.cfg)
+        self.assertEqual(autoexport.configured_targets(self.cfg), ["obsidian"])
+        results = self._run()
+        self.assertEqual(results, [{"target": "obsidian", "status": "success", "count": 2}])
+        self.assertEqual(sorted(p.name for p in obs_dir.glob("*.md")), ["书b1.md", "书b2.md"])
+        # Second run with no changes writes 0 files
+        results2 = self._run()
+        self.assertEqual(results2, [{"target": "obsidian", "status": "success", "count": 0}])
+
 
 if __name__ == "__main__":
     unittest.main()

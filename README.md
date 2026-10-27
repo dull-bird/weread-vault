@@ -107,11 +107,13 @@ weread-vault serve --open             # 打开本地网页 Dashboard
 # 导出到知识库（手动导出一次）
 weread-vault export markdown --out ~/Documents/weread-notes
 weread-vault export markdown --out ~/Documents/weread-notes --with-popular   # 合并他人热门划线（随同步已自动拉取，去重）
+weread-vault export obsidian --out "~/Documents/Obsidian Vault/微信读书"     # 增量导出到 Obsidian（保留手写内容与管理区块）
 weread-vault export flomo  --webhook "$FLOMO_WEBHOOK"
 weread-vault export notion --token "$NOTION_TOKEN" --database "$NOTION_DATABASE_ID"
 
 # 自动导出：配置一次，之后每次 sync（含定时同步）自动导出到所有已配置目的地
-weread-vault export config --markdown "~/Documents/Obsidian Vault/微信读书"
+weread-vault export config --obsidian "~/Documents/Obsidian Vault/微信读书"
+weread-vault export config --markdown "~/Documents/weread-notes"
 weread-vault export config --flomo "$FLOMO_WEBHOOK"
 weread-vault export config --notion-token "$NOTION_TOKEN" --notion-db "$NOTION_DATABASE_ID"
 weread-vault export config --show     # 查看已配置目的地（密钥打码）

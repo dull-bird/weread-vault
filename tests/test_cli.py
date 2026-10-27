@@ -201,6 +201,32 @@ class CliApiTests(unittest.TestCase):
                 sync_out = self._run(["--db", str(db_path), "sync", "shelf"])
                 self.assertIn("书架 3（电子书 1，有声书 2）", sync_out)
 
+    def test_export_obsidian_cli_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "vault.db"
+            obs_dir = Path(tmp) / "obs"
+            initialize(db_path)
+            with connect(db_path) as conn:
+                conn.execute(
+                    "INSERT INTO books(book_id,title,author,total_notes,sort,synced_at)"
+                    " VALUES('b1','测试书','作者',1,10,0)"
+                )
+                conn.execute(
+                    "INSERT INTO highlights(bookmark_id,book_id,chapter_uid,chapter_title,mark_text,text_range,create_time,updated_at)"
+                    " VALUES('m1','b1',1,'第一章','一条划线','1-10',1,0)"
+                )
+            out1 = self._run(["--db", str(db_path), "export", "obsidian", "--out", str(obs_dir)])
+            self.assertIn("新建 1 篇，追加 0 篇，新增 1 条", out1)
+            out2 = self._run(["--db", str(db_path), "export", "obsidian", "--out", str(obs_dir)])
+            self.assertIn("新建 0 篇，追加 0 篇，新增 0 条", out2)
+            with connect(db_path) as conn:
+                conn.execute(
+                    "INSERT INTO highlights(bookmark_id,book_id,chapter_uid,chapter_title,mark_text,text_range,create_time,updated_at)"
+                    " VALUES('m2','b1',1,'第一章','第二条划线','20-30',2,0)"
+                )
+            out3 = self._run(["--db", str(db_path), "export", "obsidian", "--out", str(obs_dir)])
+            self.assertIn("新建 0 篇，追加 1 篇，新增 1 条", out3)
+
 
 if __name__ == "__main__":
     unittest.main()

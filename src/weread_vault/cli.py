@@ -16,7 +16,7 @@ from . import __version__
 from .config import DEFAULT_PORT, default_db_path
 from .db import connect, initialize, summary
 from .errors import WereadVaultError
-from .export import export_markdown
+from .export import export_markdown, export_obsidian
 from .gateway import Gateway
 from .integrations import export_flomo, export_notion
 from .sync import SyncService
@@ -179,6 +179,10 @@ def parser() -> argparse.ArgumentParser:
     markdown.add_argument("--force", action="store_true", help="忽略增量，强制重写所有文件")
     markdown.add_argument("--with-popular", action="store_true",
                           help="合并导出他人热门划线（需先 weread-vault sync popular）")
+    obsidian = export_sub.add_parser("obsidian", help="增量导出到 Obsidian（保留手写内容与管理区块）")
+    obsidian.add_argument("--out", required=True, help="目标目录")
+    obsidian.add_argument("--with-popular", action="store_true",
+                          help="合并导出他人热门划线（需先 weread-vault sync popular）")
     flomo = export_sub.add_parser("flomo", help="导出到 flomo（每本书一条 memo）")
     flomo.add_argument("--webhook", help="flomo 专属 API；默认读环境变量 FLOMO_WEBHOOK")
     flomo.add_argument("--limit", type=int, help="最多导出多少本")
@@ -189,14 +193,15 @@ def parser() -> argparse.ArgumentParser:
     export_cfg = export_sub.add_parser(
         "config", help="配置自动导出目的地（每次同步后自动导出到已配置的目的地）")
     export_cfg.add_argument("--markdown", metavar="DIR", help="设置 Markdown/Obsidian 导出目录")
+    export_cfg.add_argument("--obsidian", metavar="DIR", help="设置 Obsidian 增量导出目录")
     export_cfg.add_argument("--flomo", metavar="WEBHOOK", help="设置 flomo 专属 API")
     export_cfg.add_argument("--notion-token", dest="notion_token", metavar="TOKEN", help="设置 Notion 集成 token")
     export_cfg.add_argument("--notion-db", dest="notion_db", metavar="ID", help="设置 Notion 数据库 ID")
-    export_cfg.add_argument("--enable", choices=("markdown", "flomo", "notion"),
+    export_cfg.add_argument("--enable", choices=("markdown", "obsidian", "flomo", "notion"),
                             help="开启某个目的地的自动导出（凭据不变）")
-    export_cfg.add_argument("--disable", choices=("markdown", "flomo", "notion"),
+    export_cfg.add_argument("--disable", choices=("markdown", "obsidian", "flomo", "notion"),
                             help="关闭某个目的地的自动导出（保留凭据，仍可手动导出）")
-    export_cfg.add_argument("--clear", choices=("markdown", "flomo", "notion"), help="清除某个目的地的配置（含凭据与自动开关）")
+    export_cfg.add_argument("--clear", choices=("markdown", "obsidian", "flomo", "notion"), help="清除某个目的地的配置（含凭据与自动开关）")
     export_cfg.add_argument("--show", action="store_true", help="查看已配置的自动导出目的地（密钥打码）")
     log_p = sub.add_parser("log", help="查看同步/导出历史（读取 sync_runs）")
     log_p.add_argument("--limit", type=int, default=20, help="最多显示多少条（默认 20）")
@@ -335,6 +340,10 @@ def _export_config(args: argparse.Namespace) -> None:
         save_config("export_markdown_dir", str(Path(args.markdown).expanduser()))
         set_auto("markdown", True)
         changed = True
+    if args.obsidian:
+        save_config("export_obsidian_dir", str(Path(args.obsidian).expanduser()))
+        set_auto("obsidian", True)
+        changed = True
     if args.flomo:
         save_config("flomo_webhook", args.flomo)
         set_auto("flomo", True)
@@ -357,6 +366,8 @@ def _export_config(args: argparse.Namespace) -> None:
     if args.clear:
         if args.clear == "markdown":
             save_config("export_markdown_dir", "")
+        elif args.clear == "obsidian":
+            save_config("export_obsidian_dir", "")
         elif args.clear == "flomo":
             save_config("flomo_webhook", "")
         else:
@@ -373,6 +384,7 @@ def _export_config(args: argparse.Namespace) -> None:
 
     # Default (or --show): report what is configured, secrets masked.
     md = get_config("export_markdown_dir")
+    obs = get_config("export_obsidian_dir")
     flomo = get_config("flomo_webhook")
     token = get_config("notion_token")
     database = get_config("notion_database")
@@ -383,6 +395,7 @@ def _export_config(args: argparse.Namespace) -> None:
 
     print("导出配置（[自动]=每次完整 sync 后触发；[仅手动]=已存凭据但不自动导出）：")
     print(_line("Markdown/Obsidian", md, "markdown"))
+    print(_line("Obsidian（增量）", obs, "obsidian"))
     print(_line("flomo", _mask(flomo) if flomo else "", "flomo"))
     notion_val = ("token " + _mask(token) + " · db " + _mask(database)) if (token and database) else ""
     print(_line("Notion", notion_val, "notion"))
@@ -526,7 +539,7 @@ def main(argv: list[str] | None = None) -> None:
                       "确认请重跑：weread-vault reset --yes", file=sys.stderr)
                 raise SystemExit(1)
             with connect(db_path) as conn:
-                for table in ("highlights", "thoughts", "reading_stats", "books", "sync_runs", "sync_state"):
+                for table in ("highlights", "thoughts", "reading_stats", "obsidian_exported", "books", "sync_runs", "sync_state"):
                     conn.execute(f"DELETE FROM {table}")
                 conn.commit()
             print("已清空本地阅读数据。")
@@ -583,6 +596,9 @@ def main(argv: list[str] | None = None) -> None:
                     count = export_markdown(conn, Path(args.out).expanduser(), force=args.force,
                                             with_popular=args.with_popular)
                     print(f"已更新 {count} 篇 Markdown（无变化的已跳过）")
+                elif args.export_command == "obsidian":
+                    res = export_obsidian(conn, Path(args.out).expanduser(), with_popular=args.with_popular)
+                    print(f"新建 {res.created} 篇，追加 {res.appended} 篇，新增 {res.new_items} 条")
                 elif args.export_command == "flomo":
                     webhook = args.webhook or os.environ.get("FLOMO_WEBHOOK")
                     if not webhook:
