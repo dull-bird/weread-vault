@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import html
 import json
 import os
@@ -121,27 +120,18 @@ def _norm_author(name: str | None) -> str:
     return "".join(out)
 
 
-def weread_url(book_id: str) -> str:
-    """WeRead web book-detail URL. Reproduces WeRead's published bookId→hash transform."""
-    book_id = str(book_id)
-    digest = hashlib.md5(book_id.encode("utf-8")).hexdigest()
-    result = digest[:3]
-    if book_id.isdigit():
-        parts = [format(int(book_id[i:i + 9]), "x") for i in range(0, len(book_id), 9)]
-        type_flag = "3"
-    else:
-        parts = ["".join(format(ord(char), "x") for char in book_id)]
-        type_flag = "4"
-    result += type_flag + "2" + digest[-2:]
-    for index, part in enumerate(parts):
-        length = format(len(part), "x")
-        result += (length if len(length) == 2 else "0" + length) + part
-        if index < len(parts) - 1:
-            result += "g"
-    if len(result) < 20:
-        result += digest[: 20 - len(result)]
-    result += hashlib.md5(result.encode("utf-8")).hexdigest()[:3]
-    return "https://weread.qq.com/web/bookDetail/" + result
+def weread_url(
+    book: dict[str, object] | sqlite3.Row | None = None,
+    *,
+    reader_link: str | None = None,
+    deep_link: str | None = None,
+) -> str:
+    """Return the official WeRead readerLink (preferred) or deepLink, or empty string if absent."""
+    if isinstance(book, (dict, sqlite3.Row)):
+        data = dict(book)
+        reader_link = reader_link or str(data.get("reader_link") or data.get("readerLink") or "")
+        deep_link = deep_link or str(data.get("deep_link") or data.get("deepLink") or "")
+    return str(reader_link or deep_link or "")
 
 
 def _session_distribution(conn: sqlite3.Connection, gap: int = 1800, since: int = 0) -> dict[str, object]:
@@ -692,7 +682,7 @@ async function doStoreSearch(){const q=curQ,res=e('results');res.className='res 
  if(!storeBooks.length){res.className='res empty';res.textContent='未找到相关书籍。';return}
  res.className='grid';
  res.innerHTML=storeBooks.map((x,i)=>`<div class=book data-i='${i}'><div class=cover>${cover(x)}</div><div class=meta><div class=t>${esc(x.title||'未命名')}</div><div class=a>${esc(x.author||'—')}</div></div></div>`).join('');
- res.querySelectorAll('.book').forEach(el=>el.onclick=()=>{const x=storeBooks[+el.dataset.i];openBook(x.book_id,{title:x.title,author:x.author,cover:x.cover})});
+ res.querySelectorAll('.book').forEach(el=>el.onclick=()=>{const x=storeBooks[+el.dataset.i];openBook(x.book_id,{title:x.title,author:x.author,cover:x.cover,weread_url:x.weread_url,reader_link:x.reader_link,deep_link:x.deep_link})});
 }
 e('smode').querySelectorAll('button').forEach(b=>b.onclick=()=>{searchMode=b.dataset.m;e('smode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));e('q').placeholder=searchMode==='store'?'搜索微信读书书城（书名 / 作者）':'输入关键词，搜索划线和想法';e('results').className='res empty';e('results').textContent='输入关键词后搜索。'});
 e('search').onsubmit=ev=>{ev.preventDefault();curQ=e('q').value.trim();if(!curQ)return;searchMode==='store'?doStoreSearch():doSearch(1)};
@@ -938,7 +928,8 @@ def make_handler(db_path: Path):
                     book = conn.execute(
                         """SELECT book_id,title,author,cover,intro,category,publish_time,
                         total_notes,reading_progress,review_count,note_count,bookmark_count,finished,
-                        rating,rating_count,word_count,publisher,isbn,translator,on_shelf
+                        rating,rating_count,word_count,publisher,isbn,translator,on_shelf,
+                        reader_link,deep_link
                         FROM books WHERE book_id=?""",
                         (book_id,),
                     ).fetchone()
@@ -960,14 +951,20 @@ def make_handler(db_path: Path):
                                 "publisher": info.get("publisher"),
                                 "isbn": info.get("isbn"),
                                 "intro": info.get("intro") or book.get("intro"),
+                                "reader_link": info.get("readerLink") or book.get("reader_link"),
+                                "deep_link": info.get("deepLink") or book.get("deep_link"),
                             }
-                            if enrich["rating"]:
+                            if enrich["rating"] or enrich["reader_link"] or enrich["deep_link"]:
                                 with connect(db_path) as wconn:
                                     wconn.execute(
-                                        """UPDATE books SET rating=?,rating_count=?,word_count=?,
-                                        publisher=?,isbn=?,intro=COALESCE(NULLIF(?,''),intro) WHERE book_id=?""",
+                                        """UPDATE books SET rating=COALESCE(?,rating),rating_count=COALESCE(?,rating_count),
+                                        word_count=COALESCE(?,word_count),publisher=COALESCE(?,publisher),
+                                        isbn=COALESCE(?,isbn),intro=COALESCE(NULLIF(?,''),intro),
+                                        reader_link=COALESCE(?,reader_link),deep_link=COALESCE(?,deep_link)
+                                        WHERE book_id=?""",
                                         (enrich["rating"], enrich["rating_count"], enrich["word_count"],
-                                         enrich["publisher"], enrich["isbn"], enrich["intro"], book_id),
+                                         enrich["publisher"], enrich["isbn"], enrich["intro"],
+                                         enrich["reader_link"], enrich["deep_link"], book_id),
                                     )
                                 book.update({k: v for k, v in enrich.items() if v is not None})
                         except Exception:  # noqa: BLE001 — enrichment is optional; show the book regardless
@@ -983,7 +980,7 @@ def make_handler(db_path: Path):
                         (book_id,),
                     ).fetchall()
                     book_dict = dict(book)
-                    book_dict["weread_url"] = weread_url(book_id)
+                    book_dict["weread_url"] = weread_url(book_dict)
                     _json(
                         self,
                         {
@@ -1020,11 +1017,11 @@ def make_handler(db_path: Path):
                             ).fetchall() if has_table else []
                             if not books:
                                 books = conn.execute(
-                                    """SELECT book_id,title,author,cover FROM books
+                                    """SELECT book_id,title,author,cover,reader_link,deep_link FROM books
                                     WHERE author=? AND book_id<>? ORDER BY sort DESC LIMIT 12""",
                                     (author, book_id),
                                 ).fetchall()
-                            _json(self, {"books": [dict(row) | {"weread_url": weread_url(row["book_id"])} for row in books], "by": author})
+                            _json(self, {"books": [dict(row) | {"weread_url": weread_url(row)} for row in books], "by": author})
                             return
                         if kind == "reviews":
                             exists = conn.execute(
@@ -1070,7 +1067,8 @@ def make_handler(db_path: Path):
                                             related.append({
                                                 "book_id": bid, "title": info.get("title"), "author": info.get("author"),
                                                 "cover": (info.get("cover") or "").replace("/s_", "/t7_"),
-                                                "weread_url": weread_url(bid)})
+                                                "reader_link": info.get("readerLink"), "deep_link": info.get("deepLink"),
+                                                "weread_url": weread_url(info)})
                             _json(self, {"books": related[:12], "by": author})
                         elif kind == "reviews":
                             data = Gateway().call("/review/list", bookId=book_id, count=20)
@@ -1123,7 +1121,8 @@ def make_handler(db_path: Path):
                                     cover = (info.get("cover") or "").replace("/s_", "/t7_")
                                     books.append({"book_id": info["bookId"], "title": info.get("title"),
                                                   "author": info.get("author"), "cover": cover,
-                                                  "weread_url": weread_url(info["bookId"])})
+                                                  "reader_link": info.get("readerLink"), "deep_link": info.get("deepLink"),
+                                                  "weread_url": weread_url(info)})
                         seen, unique = set(), []
                         for book in books:
                             if book["book_id"] not in seen:

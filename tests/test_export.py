@@ -123,6 +123,29 @@ class ExportTests(unittest.TestCase):
             self.assertNotIn("> A highlight", md)
             self.assertIn("- 【Chapter】普通章节点评", md)
 
+    def test_official_reader_and_deep_links_in_markdown_export(self):
+        with connect(self.db_path) as conn:
+            # 1) Neither reader_link nor deep_link -> no link generated at all
+            export_markdown(conn, self.out, force=True)
+            md = self.md_path.read_text(encoding="utf-8")
+            self.assertNotIn("weread://", md)
+            self.assertNotIn("[打开阅读]", md)
+            self.assertNotIn("[查看详情]", md)
+
+            # 2) Only deep_link -> [查看详情](deep_link)
+            conn.execute("UPDATE books SET deep_link='https://weread.qq.com/web/bookDetail/d1' WHERE book_id='book-1'")
+            export_markdown(conn, self.out, force=True)
+            md = self.md_path.read_text(encoding="utf-8")
+            self.assertIn("[查看详情](https://weread.qq.com/web/bookDetail/d1)", md)
+            self.assertNotIn("[打开阅读]", md)
+
+            # 3) Both reader_link and deep_link -> prefers [打开阅读](reader_link)
+            conn.execute("UPDATE books SET reader_link='https://weread.qq.com/web/reader/r1' WHERE book_id='book-1'")
+            export_markdown(conn, self.out, force=True)
+            md = self.md_path.read_text(encoding="utf-8")
+            self.assertIn("[打开阅读](https://weread.qq.com/web/reader/r1)", md)
+            self.assertNotIn("[查看详情]", md)
+
 
 if __name__ == "__main__":
     unittest.main()

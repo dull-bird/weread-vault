@@ -226,18 +226,23 @@ class SyncService:
         elif not isinstance(category, str):
             category = None
         finished = item.get("finishReading")
+        reader_link = item.get("readerLink") or None
+        deep_link = item.get("deepLink") or None
         updated = self.conn.execute(
             """UPDATE books SET title=COALESCE(?,title), author=COALESCE(?,author),
-            cover=COALESCE(?,cover), category=COALESCE(category,?), finished=COALESCE(?,finished)
+            cover=COALESCE(?,cover), category=COALESCE(category,?), finished=COALESCE(?,finished),
+            reader_link=COALESCE(?,reader_link), deep_link=COALESCE(?,deep_link)
             WHERE book_id=?""",
-            (item.get("title"), item.get("author"), item.get("cover"), category, finished, str(book_id)),
+            (item.get("title"), item.get("author"), item.get("cover"), category, finished,
+             reader_link, deep_link, str(book_id)),
         )
         if updated.rowcount == 0:
             self.conn.execute(
-                """INSERT INTO books(book_id,title,author,cover,category,finished,total_notes,sort,synced_at)
-                VALUES (?,?,?,?,?,?,0,?,?)""",
+                """INSERT INTO books(book_id,title,author,cover,category,finished,reader_link,deep_link,
+                total_notes,sort,synced_at)
+                VALUES (?,?,?,?,?,?,?,?,0,?,?)""",
                 (str(book_id), item.get("title"), item.get("author"), item.get("cover"), category, finished,
-                 item.get("updateTime") or now, now),
+                 reader_link, deep_link, item.get("updateTime") or now, now),
             )
 
     def _sync_book_info(self, limit: int | None, refresh: bool = False) -> int:
@@ -258,10 +263,13 @@ class SyncService:
                 with self.conn:
                     self.conn.execute(
                         """UPDATE books SET rating=?, rating_count=?, word_count=?, publisher=?, isbn=?,
-                        translator=?, intro=COALESCE(NULLIF(?,''), intro) WHERE book_id=?""",
+                        translator=?, intro=COALESCE(NULLIF(?,''), intro),
+                        reader_link=COALESCE(?, reader_link), deep_link=COALESCE(?, deep_link)
+                        WHERE book_id=?""",
                         (int(info.get("newRating") or 0), info.get("newRatingCount"), info.get("wordCount"),
                          info.get("publisher"), info.get("isbn"), info.get("translator"),
-                         info.get("intro"), book["book_id"]),
+                         info.get("intro"), info.get("readerLink") or None, info.get("deepLink") or None,
+                         book["book_id"]),
                     )
                 done += 1
                 self.report(f"书籍信息：[{index}/{total}] {book['title'] or book['book_id']}")
@@ -309,15 +317,18 @@ class SyncService:
         review_count = int(item.get("reviewCount") or 0)
         note_count = int(item.get("noteCount") or 0)
         bookmark_count = int(item.get("bookmarkCount") or 0)
+        reader_link = item.get("readerLink") or info.get("readerLink") or None
+        deep_link = item.get("deepLink") or info.get("deepLink") or None
         values = (
             info.get("title"), info.get("author"), info.get("cover"), info.get("intro"), category,
             info.get("publishTime"), review_count, note_count, bookmark_count,
             review_count + note_count + bookmark_count, item.get("readingProgress"), item.get("markedStatus"),
-            info.get("finished"), item.get("sort"), now, str(book_id),
+            info.get("finished"), item.get("sort"), reader_link, deep_link, now, str(book_id),
         )
         updated = self.conn.execute(
             """UPDATE books SET title=?,author=?,cover=?,intro=COALESCE(NULLIF(?,''),intro),category=?,publish_time=?,review_count=?,
-            note_count=?,bookmark_count=?,total_notes=?,reading_progress=?,marked_status=?,finished=?,sort=?,synced_at=?
+            note_count=?,bookmark_count=?,total_notes=?,reading_progress=?,marked_status=?,finished=?,sort=?,
+            reader_link=COALESCE(?,reader_link),deep_link=COALESCE(?,deep_link),synced_at=?
             WHERE book_id=?""",
             values,
         )
@@ -325,8 +336,8 @@ class SyncService:
             self.conn.execute(
                 """INSERT INTO books(
                     title,author,cover,intro,category,publish_time,review_count,note_count,bookmark_count,
-                    total_notes,reading_progress,marked_status,finished,sort,synced_at,book_id
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    total_notes,reading_progress,marked_status,finished,sort,reader_link,deep_link,synced_at,book_id
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 values,
             )
 

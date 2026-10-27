@@ -41,9 +41,11 @@ class FakeGateway:
             return {"ok": True}
         if endpoint == "/shelf/sync":
             return {"books": [
-                {"bookId": "book-1", "title": "Test Book", "author": "Author", "cover": "c1", "category": "文学"},
+                {"bookId": "book-1", "title": "Test Book", "author": "Author", "cover": "c1", "category": "文学",
+                 "readerLink": "https://weread.qq.com/web/reader/r1", "deepLink": "https://weread.qq.com/web/bookDetail/d1"},
                 {"bookId": "book-2", "title": "Shelf Only", "author": "B", "cover": "c2",
-                 "category": "科技", "finishReading": 1, "updateTime": 50},
+                 "category": "科技", "finishReading": 1, "updateTime": 50,
+                 "deepLink": "https://weread.qq.com/web/bookDetail/d2"},
             ]}
         raise AssertionError(endpoint)
 
@@ -79,9 +81,13 @@ class SyncTests(unittest.TestCase):
             shelf_only = conn.execute("SELECT total_notes,finished FROM books WHERE book_id='book-2'").fetchone()
             self.assertEqual(shelf_only["total_notes"], 0)
             self.assertEqual(shelf_only["finished"], 1)
-            # existing noted book keeps its note count (shelf sync is non-destructive)
-            noted_after = conn.execute("SELECT total_notes FROM books WHERE book_id='book-1'").fetchone()[0]
-            self.assertEqual(noted_after, noted_before)
+            # existing noted book keeps its note count (shelf sync is non-destructive) and stores official links
+            noted_after = conn.execute(
+                "SELECT total_notes, reader_link, deep_link FROM books WHERE book_id='book-1'"
+            ).fetchone()
+            self.assertEqual(noted_after["total_notes"], noted_before)
+            self.assertEqual(noted_after["reader_link"], "https://weread.qq.com/web/reader/r1")
+            self.assertEqual(noted_after["deep_link"], "https://weread.qq.com/web/bookDetail/d1")
 
     def test_account_switch_removes_old_account_books_with_their_notes(self):
         with connect(self.db_path) as conn:

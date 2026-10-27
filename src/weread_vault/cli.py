@@ -19,7 +19,7 @@ from .export import export_markdown
 from .gateway import Gateway
 from .integrations import export_flomo, export_notion
 from .sync import SyncService
-from .web import _reading_stats, serve, weread_url
+from .web import _reading_stats, serve
 
 
 def _path(value: str | None) -> Path:
@@ -229,34 +229,11 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
-def _open_url(url: str) -> None:
-    """Open a URL with the OS default handler. On macOS that routes weread.qq.com links to the
-    WeRead app if it's installed (universal links), otherwise the browser; same idea elsewhere."""
-    system = platform.system()
-    if system == "Darwin":
-        subprocess.run(["open", url], check=False)
-    elif system == "Windows":
-        os.startfile(url)  # type: ignore[attr-defined]
-    elif shutil.which("xdg-open"):
-        subprocess.run(["xdg-open", url], check=False)
-    else:
-        webbrowser.open(url)
-
-
-def _open_weread_app(book_id: str) -> bool:
-    """Try to open the book in the native macOS WeRead app via its weread:// scheme. Returns True
-    if the app handled it; False (e.g. app not installed → no handler) so the caller falls back."""
-    if platform.system() != "Darwin":
-        return False
-    result = subprocess.run(["open", f"weread://bDetail?bId={book_id}"], capture_output=True, check=False)
-    return result.returncode == 0
-
-
 def _open_book(path: Path, query: str, *, pick: int | None = None, web: bool = False,
                print_only: bool = False) -> None:
     _require_db(path)
     query = query.strip()
-    cols = "SELECT book_id,title,author,reading_progress,total_notes FROM books"
+    cols = "SELECT book_id,title,author,reading_progress,total_notes,reader_link,deep_link FROM books"
     with connect(path) as conn:
         # Exact book_id first (an agent often already has the id from `query`/`book`), else title.
         by_id = conn.execute(f"{cols} WHERE book_id=?", (query,)).fetchone()
@@ -287,21 +264,30 @@ def _open_book(path: Path, query: str, *, pick: int | None = None, web: bool = F
                   f"{row['total_notes'] or 0} 笔记 · id={row['book_id']}")
         return
     book_id = book["book_id"]
-    web_url = weread_url(book_id)
     label = f"《{book['title']}》{book['author'] or ''}".rstrip()
-    if print_only:
-        link = web_url if web else (f"weread://bDetail?bId={book_id}" if platform.system() == "Darwin" else web_url)
+    link = book["reader_link"] or book["deep_link"]
+    if not link:
+        try:
+            info = Gateway().call("/book/info", bookId=book_id)
+        except Exception:  # noqa: BLE001
+            info = {}
+        r_link = (info.get("readerLink") or "").strip() or None
+        d_link = (info.get("deepLink") or "").strip() or None
+        if r_link or d_link:
+            with connect(path) as conn:
+                conn.execute(
+                    """UPDATE books SET reader_link=COALESCE(?,reader_link),
+                    deep_link=COALESCE(?,deep_link) WHERE book_id=?""",
+                    (r_link, d_link, book_id),
+                )
+            link = r_link or d_link
+    if not link:
+        raise WereadVaultError(f"官方没有给这本书的链接：{label}")
+    if print_only or platform.system() != "Darwin":
         print(f"{label}\n{link}")
         return
-    # On macOS, try the native app first; if it's not installed the open fails and we fall back to
-    # the web page. With --web (or on other platforms) go straight to the web page — works anywhere.
-    if not web and _open_weread_app(book_id):
-        print(f"已在微信读书 App 打开 {label}")
-        return
-    if not web and platform.system() == "Darwin":
-        print("未检测到微信读书 App，改用网页版。")
-    _open_url(web_url)
-    print(f"已在网页版打开 {label}\n{web_url}")
+    subprocess.run(["open", link], check=False)
+    print(f"已打开 {label}\n{link}")
 
 
 def _require_db(path: Path) -> None:
@@ -534,7 +520,8 @@ def main(argv: list[str] | None = None) -> None:
                         "tables": schema,
                         "column_notes": {
                             "books": "一本书一行。rating=推荐值0–1000(/10得百分比)；word_count字数；total_notes笔记数；"
-                                     "reading_progress 0–100；book_id 以 'MP_' 开头=公众号；category 形如 '经济理财-理财'。",
+                                     "reading_progress 0–100；reader_link/deep_link=官方跳转链接；"
+                                     "book_id 以 'MP_' 开头=公众号；category 形如 '经济理财-理财'。",
                             "highlights": "划线。mark_text=原文；create_time=Unix秒(用 datetime(create_time,'unixepoch','+8 hours') 转北京时间)；book_id 关联 books。",
                             "thoughts": "想法/书评。is_book_review=1为整本书评；content=想法内容；abstract=对应的划线原文；chapter_idx=章节序号；create_time=Unix秒。",
                             "reading_stats": "统计快照(JSON 在 payload)；解析好的统计请改用 `weread-vault stats`。",

@@ -51,6 +51,26 @@ class WebTests(unittest.TestCase):
         self.assertEqual(rows[0]["title"], "Test Book")
         self.assertEqual(rows[0]["cover"], "https://example.test/cover.jpg")
 
+    def test_book_api_uses_official_links_and_empty_when_absent(self):
+        data = self.get_json("/api/book?book_id=book-1")
+        self.assertEqual(data["book"]["weread_url"], "")
+        with connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE books SET deep_link='https://weread.qq.com/web/bookDetail/d1' WHERE book_id='book-1'"
+            )
+        self.assertEqual(
+            self.get_json("/api/book?book_id=book-1")["book"]["weread_url"],
+            "https://weread.qq.com/web/bookDetail/d1",
+        )
+        with connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE books SET reader_link='https://weread.qq.com/web/reader/r1' WHERE book_id='book-1'"
+            )
+        self.assertEqual(
+            self.get_json("/api/book?book_id=book-1")["book"]["weread_url"],
+            "https://weread.qq.com/web/reader/r1",
+        )
+
     def test_stats_endpoint_parses_overall_snapshot(self):
         payload = {
             "totalReadTime": 3600, "readDays": 10, "authorCount": 5,

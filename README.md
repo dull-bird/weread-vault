@@ -98,7 +98,7 @@ GitHub 式划线热力图，按每日划线活跃度展示，跨多年一目了�
 
 ```bash
 weread-vault sync                     # 日常增量同步（书架 + 笔记 + 统计）
-weread-vault open 三体                 # 在微信读书打开一本书（macOS 唤起 App，否则网页版；也可传 book_id）
+weread-vault open 三体                 # 用官方 readerLink/deepLink 打开一本书（macOS 调 open，其他平台打印链接；也可传 book_id）
 weread-vault schedule --daily 07:00    # 每天 07:00 自动同步（系统定时器，不常驻）
 weread-vault status                   # 本地库数量与最近同步状态
 weread-vault serve --open             # 打开本地网页 Dashboard

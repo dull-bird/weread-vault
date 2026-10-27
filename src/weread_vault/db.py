@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Columns added after v1 (rich /book/info metadata). Added idempotently to existing
 # databases via PRAGMA table_info so upgrading never drops data.
@@ -16,6 +16,7 @@ _BOOK_EXTRA_COLUMNS = {
     "publisher": "TEXT", "isbn": "TEXT", "translator": "TEXT",
     # 1 = currently on the main bookshelf, 0 = kept only because archived / has notes. Set during sync.
     "on_shelf": "INTEGER",
+    "reader_link": "TEXT", "deep_link": "TEXT",
 }
 
 _THOUGHT_EXTRA_COLUMNS = {
@@ -52,6 +53,8 @@ CREATE TABLE IF NOT EXISTS books (
   isbn TEXT,
   translator TEXT,
   on_shelf INTEGER,
+  reader_link TEXT,
+  deep_link TEXT,
   synced_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS highlights (

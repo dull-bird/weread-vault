@@ -113,7 +113,7 @@ Behaviour:
 
 - A `book_id`, a single title match, or a query that is exactly one book's full title opens immediately. If you already have the `book_id` (from `weread-vault query` or `book`), pass it — it's unambiguous.
 - **Several title matches → it does not guess.** It prints a numbered list (title · author · 进度 · 笔记数 · `id=…`) and asks for `--pick N`. Show the user the list and let them choose, re-run with `--pick N`, or open one directly by its `book_id`.
-- On macOS it opens the native WeRead app via the `weread://` scheme; if the app isn't installed (or `--web`, or on Windows/Linux) it falls back to the `weread.qq.com` web page.
+- Uses the official `books.reader_link` (preferred) or `books.deep_link` synced from `/shelf/sync` and `/book/info` (never hand-built `weread://` URLs). If neither link is in the database yet, it calls `/book/info` once to fetch and persist them; if the official API provides neither, it exits non-zero with "官方没有给这本书的链接". On macOS it invokes `open <link>`; on other platforms it prints the link. Markdown exports render `[打开阅读](reader_link)` or `[查看详情](deep_link)`, or omit the link when both are absent.
 
 ## Schedule a daily auto-sync
 

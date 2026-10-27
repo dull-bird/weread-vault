@@ -121,6 +121,12 @@ def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = F
         names[filename] = book["book_id"]
         path = destination / f"{filename}.md"
         progress = book["reading_progress"] or 0
+        if book["reader_link"]:
+            link_lines = [f"[打开阅读]({book['reader_link']})", ""]
+        elif book["deep_link"]:
+            link_lines = [f"[查看详情]({book['deep_link']})", ""]
+        else:
+            link_lines = []
         lines = [
             "---",
             f'title: "{(book["title"] or "").replace(chr(34), "")}"',
@@ -140,8 +146,7 @@ def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = F
             *([f"![{(book['title'] or '封面').replace(chr(34), '')}]({book['cover']})", ""] if book["cover"] else []),
             f"> 作者：{book['author'] or '未知'} · 进度：{progress}%",
             "",
-            f"[在微信读书中打开](weread://reading?bId={book['book_id']})",
-            "",
+            *link_lines,
         ]
         book_reviews = [item for item in thoughts if item["is_book_review"] and not item["abstract"]]
         chapter_thoughts = [item for item in thoughts if not (item["is_book_review"] and not item["abstract"])]
