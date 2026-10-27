@@ -97,7 +97,8 @@ GitHub 式划线热力图，按每日划线活跃度展示，跨多年一目了�
 ## ⌨️ 常用命令
 
 ```bash
-weread-vault sync                     # 日常增量同步（书架 + 笔记 + 统计）
+weread-vault sync                     # 日常增量同步（书架 + 进度 + 笔记 + 统计）
+weread-vault sync --progress-limit 50 # 每次最多补齐 50 本电子书进度（默认 150，0=不取）
 weread-vault open 三体                 # 用官方 readerLink/deepLink 打开一本书（macOS 调 open，其他平台打印链接；也可传 book_id）
 weread-vault schedule --daily 07:00    # 每天 07:00 自动同步（系统定时器，不常驻）
 weread-vault status                   # 本地库数量与最近同步状态
@@ -142,9 +143,10 @@ weread-vault api <endpoint> key=value   # 任意接口原样透传
 让 AI 灵活分析本地数据：
 
 ```bash
-weread-vault query --schema     # 表结构 + 字段说明 + 示例 SQL（AI 据此写查询）
+weread-vault query --schema     # 表结构 + 字段说明 + 示例 SQL（含 book_status 阅读状态视图，AI 据此写查询）
+weread-vault query "SELECT title, status, progress FROM book_status WHERE status='在读'"
 weread-vault query "SELECT title, rating FROM books WHERE rating>0 ORDER BY rating DESC LIMIT 10"
-weread-vault stats              # 已解析统计 JSON（周期 / 热力图 / 单次时长 / 读得最多）
+weread-vault stats              # 已解析统计 JSON（周期 / 热力图 / 单次时长 / 读得最多 / reading_status 汇总）
 ```
 
 接入 Claude Code 后，问「我评分最高的书」「哪个分类笔记最多」，AI 会自己 `query --schema` 再写 SQL 回答。荐书 Skill [`skills/weread-recommend`](skills/weread-recommend/SKILL.md) 会结合你的口味、书城和联网，按主题推荐不与已读重复的书。

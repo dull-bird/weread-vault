@@ -148,10 +148,12 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="创建本地 SQLite 数据库")
     sync = sub.add_parser("sync", help="从微信读书同步到本地库")
     sync.add_argument("scope", nargs="?",
-                      choices=("all", "shelf", "books", "notes", "stats", "info", "popular"), default="all")
+                      choices=("all", "shelf", "books", "notes", "stats", "info", "popular", "progress"), default="all")
     sync.add_argument("--full-notes", action="store_true", help="忽略变更水位，重新同步所有有笔记的书")
     sync.add_argument("--refresh", action="store_true", help="sync info 专用：重抓所有书的富信息（含简介），不只补缺")
     sync.add_argument("--limit", type=int, help="最多同步多少本笔记书；适合首次测试或分批同步")
+    sync.add_argument("--progress-limit", dest="progress_limit", type=int, default=150,
+                      help="每次最多同步多少本书的阅读进度（默认 150，0=不取）")
     sync.add_argument("--no-export", dest="no_export", action="store_true",
                       help="本次同步后不触发已配置的自动导出（Obsidian/flomo/Notion）")
     sub.add_parser("status", help="显示本地库状态")
@@ -427,6 +429,8 @@ def main(argv: list[str] | None = None) -> None:
                         print(f"⚠️  {warning}", file=sys.stderr)
                     if args.limit is not None and args.limit < 1:
                         raise WereadVaultError("--limit 必须是正整数。")
+                    if args.progress_limit < 0:
+                        raise WereadVaultError("--progress-limit 不能为负数。")
                     if args.scope == "shelf":
                         count = service.shelf()
                     elif args.scope == "books":
@@ -439,8 +443,10 @@ def main(argv: list[str] | None = None) -> None:
                         count = service.info(args.limit, args.refresh)
                     elif args.scope == "popular":
                         count = service.popular(args.limit, args.refresh)
+                    elif args.scope == "progress":
+                        count = service.progress(args.limit if args.limit is not None else args.progress_limit)
                     else:
-                        count = service.all(args.full_notes, args.limit)
+                        count = service.all(args.full_notes, args.limit, progress_limit=args.progress_limit)
                     # A full sync fans out to every configured export destination while the
                     # sync lock and connection are still held, so a daily job keeps Obsidian/
                     # flomo/Notion current with no extra scheduling. Only the full `all` scope
@@ -451,6 +457,8 @@ def main(argv: list[str] | None = None) -> None:
             if isinstance(count, dict):
                 parts = [f"书架 {count['shelf']}", f"书目 {count['books']}",
                          f"笔记 {count['notes']}", f"统计 {count['stats']}"]
+                if count.get("progress"):
+                    parts.append(f"进度 {count['progress']}")
                 if count.get("popular"):
                     parts.append(f"热门划线 {count['popular']}")
                 if count.get("removed"):
@@ -513,15 +521,18 @@ def main(argv: list[str] | None = None) -> None:
                 if args.schema or not args.sql:
                     schema = {}
                     for (name,) in readonly.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+                        "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY name"
                     ):
                         schema[name] = [row["name"] for row in readonly.execute(f"PRAGMA table_info({name})")]
                     _emit_json({
                         "tables": schema,
                         "column_notes": {
                             "books": "一本书一行。rating=推荐值0–1000(/10得百分比)；word_count字数；total_notes笔记数；"
-                                     "reading_progress 0–100；reader_link/deep_link=官方跳转链接；"
+                                     "progress/reading_progress 0–100；reading_seconds阅读秒数；finish_time读完时间；"
+                                     "read_update_time最近阅读时间；reader_link/deep_link=官方跳转链接；"
                                      "book_id 以 'MP_' 开头=公众号；category 形如 '经济理财-理财'。",
+                            "book_status": "阅读状态视图。status='已读'(finished=1 或 progress=100) / '在读'(progress 1–99) / '未读'(其他)；"
+                                           "含 book_id,title,author,progress,reading_seconds,finish_time,read_update_time,status。",
                             "highlights": "划线。mark_text=原文；create_time=Unix秒(用 datetime(create_time,'unixepoch','+8 hours') 转北京时间)；book_id 关联 books。",
                             "thoughts": "想法/书评。is_book_review=1为整本书评；content=想法内容；abstract=对应的划线原文；chapter_idx=章节序号；create_time=Unix秒。",
                             "reading_stats": "统计快照(JSON 在 payload)；解析好的统计请改用 `weread-vault stats`。",

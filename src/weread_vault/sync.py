@@ -101,6 +101,58 @@ class SyncService:
     def popular(self, limit: int | None = None, refresh: bool = False) -> int:
         return self._run("popular", lambda: self._sync_popular(limit, refresh))
 
+    def progress(self, limit: int | None = 150) -> int:
+        return self._run("progress", lambda: self._sync_progress(limit))
+
+    def _sync_progress(self, limit: int | None = 150) -> int:
+        if limit is not None and limit <= 0:
+            self.report("阅读进度：本次跳过（limit=0）")
+            return 0
+        sql = """SELECT book_id, title, read_update_time FROM books
+                 WHERE (on_shelf = 1 OR on_shelf IS NULL)
+                   AND book_id NOT LIKE 'MP_%'
+                   AND (progress_synced_at IS NULL OR read_update_time > progress_synced_at)
+                 ORDER BY COALESCE(read_update_time, 0) DESC, sort DESC"""
+        if limit is not None:
+            sql += f" LIMIT {int(limit)}"
+        rows = self.conn.execute(sql).fetchall()
+        total = len(rows)
+        self.report(f"阅读进度：待同步 {total} 本")
+        done = 0
+        for index, book in enumerate(rows, 1):
+            try:
+                payload = self.gateway.call("/book/getprogress", bookId=book["book_id"])
+                prog = payload.get("book") or {}
+                progress_val = prog.get("progress")
+                finish_time = prog.get("finishTime")
+                reading_seconds = prog.get("recordReadingTime")
+                update_time = prog.get("updateTime")
+                rut = book["read_update_time"]
+                if rut is not None and 0 < int(rut) < 1_000_000_000:
+                    synced_at = max(int(rut), int(update_time or 0))
+                else:
+                    synced_at = max(int(time.time()), int(rut or 0), int(update_time or 0))
+                with self.conn:
+                    self.conn.execute(
+                        """UPDATE books SET
+                        progress=COALESCE(?, progress),
+                        reading_progress=COALESCE(?, reading_progress),
+                        finish_time=COALESCE(?, finish_time),
+                        reading_seconds=COALESCE(?, reading_seconds),
+                        read_update_time=COALESCE(?, read_update_time),
+                        finished=CASE WHEN ?=100 THEN 1 ELSE finished END,
+                        progress_synced_at=?
+                        WHERE book_id=?""",
+                        (progress_val, progress_val, finish_time, reading_seconds,
+                         update_time, progress_val, synced_at, book["book_id"]),
+                    )
+                done += 1
+                self.report(f"阅读进度：[{index}/{total}] {book['title'] or book['book_id']}")
+            except Exception as error:
+                self.report(f"阅读进度：[{index}/{total}] {book['title'] or book['book_id']} 失败：{error}")
+            time.sleep(self.gateway.sleep_seconds)
+        return done
+
     def _sync_popular(self, limit: int | None, refresh: bool) -> int:
         # Other readers' popular highlights, for books you have notes on (so export can merge them).
         # Incremental by default: only books without popular rows yet; refresh re-fetches all.
@@ -137,18 +189,20 @@ class SyncService:
             time.sleep(self.gateway.sleep_seconds)
         return done
 
-    def all(self, full_notes: bool = False, note_limit: int | None = None) -> dict[str, int]:
+    def all(self, full_notes: bool = False, note_limit: int | None = None,
+            progress_limit: int = 150) -> dict[str, int]:
         shelf = self.shelf()      # resets + collects shelf + 归档 + 公众号 ids into self._account_ids
         books = self.books()      # adds the noted-book ids from /user/notebooks
         removed = self.reconcile()  # drop books from a previous account / removed from shelf
+        progress = self.progress(limit=progress_limit) if progress_limit != 0 else 0
         notes = self.notes(full_notes, note_limit)
         stats = self.stats()
         # Other readers' popular highlights ride along with the normal sync (incremental: only
         # books that don't have them yet), so `--with-popular` export just works with no separate
         # `sync popular` step. Only the first sync pays the full cost; later runs fetch a few.
         popular = self.popular()
-        return {"shelf": shelf, "books": books, "removed": removed, "notes": notes,
-                "stats": stats, "popular": popular}
+        return {"shelf": shelf, "books": books, "removed": removed, "progress": progress,
+                "notes": notes, "stats": stats, "popular": popular}
 
     def reconcile(self) -> int:
         return self._run("reconcile", self._reconcile)
@@ -228,21 +282,23 @@ class SyncService:
         finished = item.get("finishReading")
         reader_link = item.get("readerLink") or None
         deep_link = item.get("deepLink") or None
+        read_update_time = item.get("readUpdateTime")
         updated = self.conn.execute(
             """UPDATE books SET title=COALESCE(?,title), author=COALESCE(?,author),
             cover=COALESCE(?,cover), category=COALESCE(category,?), finished=COALESCE(?,finished),
-            reader_link=COALESCE(?,reader_link), deep_link=COALESCE(?,deep_link)
+            reader_link=COALESCE(?,reader_link), deep_link=COALESCE(?,deep_link),
+            read_update_time=COALESCE(?,read_update_time), on_shelf=1
             WHERE book_id=?""",
             (item.get("title"), item.get("author"), item.get("cover"), category, finished,
-             reader_link, deep_link, str(book_id)),
+             reader_link, deep_link, read_update_time, str(book_id)),
         )
         if updated.rowcount == 0:
             self.conn.execute(
                 """INSERT INTO books(book_id,title,author,cover,category,finished,reader_link,deep_link,
-                total_notes,sort,synced_at)
-                VALUES (?,?,?,?,?,?,?,?,0,?,?)""",
+                read_update_time,on_shelf,total_notes,sort,synced_at)
+                VALUES (?,?,?,?,?,?,?,?,?,1,0,?,?)""",
                 (str(book_id), item.get("title"), item.get("author"), item.get("cover"), category, finished,
-                 reader_link, deep_link, item.get("updateTime") or now, now),
+                 reader_link, deep_link, read_update_time, item.get("updateTime") or now, now),
             )
 
     def _sync_book_info(self, limit: int | None, refresh: bool = False) -> int:

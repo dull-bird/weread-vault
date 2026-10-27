@@ -147,3 +147,56 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(thought["text_range"], "10-20")
             self.assertEqual(thought["chapter_uid"], 1)
             self.assertEqual(thought["chapter_idx"], 3)
+
+    def test_reading_progress_sync_and_limit_and_book_status_view(self):
+        progress_calls: list[str] = []
+
+        class ProgressGateway(FakeGateway):
+            def call(self, endpoint, **params):
+                if endpoint == "/shelf/sync":
+                    return {
+                        "books": [
+                            {"bookId": "b-fin", "title": "读完的书", "author": "A", "readUpdateTime": 300},
+                            {"bookId": "b-read", "title": "在读的书", "author": "B", "readUpdateTime": 200},
+                            {"bookId": "b-unr", "title": "未读的书", "author": "C", "readUpdateTime": 100},
+                        ],
+                        "albums": [{"albumInfo": {"albumId": "alb-1", "name": "有声书"}}],
+                    }
+                if endpoint == "/book/getprogress":
+                    bid = params.get("bookId")
+                    progress_calls.append(bid)
+                    if bid == "b-fin":
+                        return {"book": {"progress": 100, "finishTime": 1700000000,
+                                         "recordReadingTime": 7200, "updateTime": 300}}
+                    if bid == "b-read":
+                        return {"book": {"progress": 35, "recordReadingTime": 1800, "updateTime": 200}}
+                    if bid == "b-unr":
+                        return {"book": {"progress": 0, "recordReadingTime": 0, "updateTime": 100}}
+                return super().call(endpoint, **params)
+
+        with connect(self.db_path) as conn:
+            gw = ProgressGateway()
+            service = SyncService(conn, gw, report=lambda _: None)
+            service.shelf()
+            # limit=0 fetches nothing
+            self.assertEqual(service.progress(limit=0), 0)
+            self.assertEqual(progress_calls, [])
+            # limit=2 fetches the 2 books with highest read_update_time descending (b-fin=300, b-read=200), never albums
+            self.assertEqual(service.progress(limit=2), 2)
+            self.assertEqual(progress_calls, ["b-fin", "b-read"])
+            # Next run only fetches the remaining unsynced book (b-unr) since b-fin and b-read are up-to-date
+            progress_calls.clear()
+            self.assertEqual(service.progress(limit=2), 1)
+            self.assertEqual(progress_calls, ["b-unr"])
+            # Check stored values and book_status view classification
+            statuses = {
+                r["book_id"]: dict(r)
+                for r in conn.execute("SELECT * FROM book_status").fetchall()
+            }
+            self.assertEqual(statuses["b-fin"]["status"], "已读")
+            self.assertEqual(statuses["b-fin"]["progress"], 100)
+            self.assertEqual(statuses["b-fin"]["reading_seconds"], 7200)
+            self.assertEqual(statuses["b-fin"]["finish_time"], 1700000000)
+            self.assertEqual(statuses["b-read"]["status"], "在读")
+            self.assertEqual(statuses["b-read"]["progress"], 35)
+            self.assertEqual(statuses["b-unr"]["status"], "未读")

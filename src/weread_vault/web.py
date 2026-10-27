@@ -258,7 +258,51 @@ def _parse_period(payload: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _reading_status_summary(conn: sqlite3.Connection) -> dict[str, object]:
+    counts = {"已读": 0, "在读": 0, "未读": 0}
+    for row in conn.execute(
+        "SELECT status, count(*) AS c FROM book_status WHERE book_id NOT LIKE 'MP_%' GROUP BY status"
+    ):
+        if row["status"] in counts:
+            counts[row["status"]] = int(row["c"] or 0)
+    total_seconds = int(
+        conn.execute(
+            "SELECT COALESCE(SUM(reading_seconds), 0) FROM book_status WHERE book_id NOT LIKE 'MP_%'"
+        ).fetchone()[0]
+        or 0
+    )
+    reading_hours = round(total_seconds / 3600, 1)
+    recent_rows = conn.execute(
+        """SELECT title, finish_time FROM book_status
+        WHERE status='已读' AND book_id NOT LIKE 'MP_%'
+        ORDER BY COALESCE(finish_time, read_update_time, 0) DESC, book_id LIMIT 5"""
+    ).fetchall()
+    recent_finished = [
+        {
+            "title": row["title"],
+            "date": time.strftime("%Y-%m-%d", time.localtime(int(row["finish_time"])))
+            if row["finish_time"]
+            else "",
+            "finish_time": row["finish_time"],
+        }
+        for row in recent_rows
+    ]
+    return {
+        "已读": counts["已读"],
+        "在读": counts["在读"],
+        "未读": counts["未读"],
+        "finished": counts["已读"],
+        "reading": counts["在读"],
+        "unread": counts["未读"],
+        "reading_hours": reading_hours,
+        "total_hours": reading_hours,
+        "reading_seconds": total_seconds,
+        "recent_finished": recent_finished,
+    }
+
+
 def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
+    reading_status = _reading_status_summary(conn)
     rows = conn.execute(
         """SELECT mode, payload FROM reading_stats
         WHERE (mode, fetched_at) IN (SELECT mode, MAX(fetched_at) FROM reading_stats GROUP BY mode)"""
@@ -266,7 +310,7 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
     by_mode = {row["mode"]: json.loads(row["payload"]) for row in rows}
     overall = by_mode.get("overall") or {}
     if not overall:
-        return {"hasData": False}
+        return {"hasData": False, "reading_status": reading_status}
     # WeRead's yearly buckets are Asia/Shanghai (UTC+8) year boundaries; shift before reading the year.
     by_year = sorted(
         ({"label": time.gmtime(int(ts) + 8 * 3600).tm_year, "seconds": secs} for ts, secs in (overall.get("readTimes") or {}).items()),
@@ -330,6 +374,7 @@ def _reading_stats(conn: sqlite3.Connection) -> dict[str, object]:
     }
     return {
         "hasData": True,
+        "reading_status": reading_status,
         "sessions": sessions,
         "periods": periods,
         "byMonth": by_month,
@@ -911,7 +956,8 @@ def make_handler(db_path: Path):
                 elif parsed.path == "/api/summary":
                     _json(self, summary(conn))
                 elif parsed.path == "/api/stats":
-                    _json(self, _reading_stats(conn))
+                    stats_data = _reading_stats(conn)
+                    _json(self, stats_data if stats_data.get("hasData") else {"hasData": False})
                 elif parsed.path == "/api/books":
                     limit = min(max(int(query.get("limit", [20])[0]), 1), 5000)
                     rows = conn.execute(

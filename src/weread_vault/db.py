@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Columns added after v1 (rich /book/info metadata). Added idempotently to existing
 # databases via PRAGMA table_info so upgrading never drops data.
@@ -17,6 +17,8 @@ _BOOK_EXTRA_COLUMNS = {
     # 1 = currently on the main bookshelf, 0 = kept only because archived / has notes. Set during sync.
     "on_shelf": "INTEGER",
     "reader_link": "TEXT", "deep_link": "TEXT",
+    "progress": "INTEGER", "finish_time": "INTEGER", "reading_seconds": "INTEGER",
+    "read_update_time": "INTEGER", "progress_synced_at": "INTEGER",
 }
 
 _THOUGHT_EXTRA_COLUMNS = {
@@ -55,6 +57,11 @@ CREATE TABLE IF NOT EXISTS books (
   on_shelf INTEGER,
   reader_link TEXT,
   deep_link TEXT,
+  progress INTEGER,
+  finish_time INTEGER,
+  reading_seconds INTEGER,
+  read_update_time INTEGER,
+  progress_synced_at INTEGER,
   synced_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS highlights (
@@ -141,8 +148,29 @@ def connect(path: Path) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+BOOK_STATUS_VIEW_SQL = """
+DROP VIEW IF EXISTS book_status;
+CREATE VIEW book_status AS
+SELECT
+  book_id,
+  title,
+  author,
+  progress,
+  reading_seconds,
+  finish_time,
+  read_update_time,
+  CASE
+    WHEN finished = 1 OR progress = 100 THEN '已读'
+    WHEN progress BETWEEN 1 AND 99 THEN '在读'
+    ELSE '未读'
+  END AS status
+FROM books;
+"""
+
+
 def _ensure_columns(conn: sqlite3.Connection) -> None:
-    for table, extra in (("books", _BOOK_EXTRA_COLUMNS), ("thoughts", _THOUGHT_EXTRA_COLUMNS)):
+    book_cols = {"author": "TEXT", "finished": "INTEGER", **_BOOK_EXTRA_COLUMNS}
+    for table, extra in (("books", book_cols), ("thoughts", _THOUGHT_EXTRA_COLUMNS)):
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         for name, sqltype in extra.items():
             if name not in existing:
@@ -153,6 +181,7 @@ def initialize(path: Path) -> None:
     with connect(path) as conn:
         conn.executescript(SCHEMA)
         _ensure_columns(conn)
+        conn.executescript(BOOK_STATUS_VIEW_SQL)
         conn.execute(
             "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
             (SCHEMA_VERSION, int(time.time())),

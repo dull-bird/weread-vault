@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -116,6 +117,51 @@ class CliApiTests(unittest.TestCase):
                         self._run(["--db", str(db_path), "open", "b3"])
                     self.assertNotEqual(ctx.exception.code, 0)
                     self.assertIn("官方没有给这本书的链接", err.getvalue())
+
+    def test_query_book_status_view_and_stats_reading_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "vault.db"
+            initialize(db_path)
+            with connect(db_path) as conn:
+                conn.execute(
+                    "INSERT INTO books(book_id,title,author,progress,finished,reading_seconds,finish_time,synced_at)"
+                    " VALUES('b1','已读书A','作者1',100,1,3600,1700000000,0)"
+                )
+                conn.execute(
+                    "INSERT INTO books(book_id,title,author,progress,finished,reading_seconds,finish_time,synced_at)"
+                    " VALUES('b2','已读书B','作者2',20,1,1800,1710000000,0)"
+                )
+                conn.execute(
+                    "INSERT INTO books(book_id,title,author,progress,finished,reading_seconds,synced_at)"
+                    " VALUES('b3','在读书','作者3',45,0,1800,0)"
+                )
+                conn.execute(
+                    "INSERT INTO books(book_id,title,author,progress,finished,reading_seconds,synced_at)"
+                    " VALUES('b4','未读书','作者4',0,0,0,0)"
+                )
+
+            schema_out = json.loads(self._run(["--db", str(db_path), "query", "--schema"]))
+            self.assertIn("book_status", schema_out["tables"])
+            rows = json.loads(
+                self._run(["--db", str(db_path), "query", "SELECT book_id, status FROM book_status ORDER BY book_id"])
+            )
+            self.assertEqual(
+                rows,
+                [
+                    {"book_id": "b1", "status": "已读"},
+                    {"book_id": "b2", "status": "已读"},
+                    {"book_id": "b3", "status": "在读"},
+                    {"book_id": "b4", "status": "未读"},
+                ],
+            )
+            stats_out = json.loads(self._run(["--db", str(db_path), "stats"]))
+            rs = stats_out["reading_status"]
+            self.assertEqual(rs["已读"], 2)
+            self.assertEqual(rs["在读"], 1)
+            self.assertEqual(rs["未读"], 1)
+            self.assertEqual(rs["reading_hours"], 2.0)
+            self.assertEqual([item["title"] for item in rs["recent_finished"]], ["已读书B", "已读书A"])
+            self.assertTrue(rs["recent_finished"][0]["date"])
 
 
 if __name__ == "__main__":

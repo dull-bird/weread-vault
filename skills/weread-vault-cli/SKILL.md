@@ -52,7 +52,7 @@ export WEREAD_API_KEY='…'
 weread-vault sync
 ```
 
-The normal sync is incremental: it fetches all notebook metadata, then refreshes only books whose remote `sort` marker advanced, stores current reading-stat snapshots, and finally pulls other readers' popular highlights for any noted book that doesn't have them yet. Popular highlights ride along with every `sync all`, so `export --with-popular` just works — there is no separate `sync popular` step to remember (only the first sync pays the full popular-fetch cost; later runs fetch a few). Use `weread-vault sync popular --refresh` only to force a re-fetch of all popular highlights.
+The normal sync is incremental: it fetches all shelf/notebook metadata (including `reader_link`, `deep_link`, and `read_update_time`), pulls per-book reading progress via `/book/getprogress` for ebooks whose `read_update_time` advanced past `progress_synced_at` (or never fetched, up to `--progress-limit N`, default 150, `0` to skip), refreshes only books whose remote `sort` marker advanced, stores current reading-stat snapshots, and finally pulls other readers' popular highlights for any noted book that doesn't have them yet. Popular highlights ride along with every `sync all`, so `export --with-popular` just works — there is no separate `sync popular` step to remember (only the first sync pays the full popular-fetch cost; later runs fetch a few). Use `weread-vault sync popular --refresh` only to force a re-fetch of all popular highlights.
 
 Use a full note pass only to repair or verify a database:
 
@@ -173,10 +173,13 @@ weread-vault api /book/readreviews bookId=<id> chapterUid=<uid> ...   # any endp
 For questions about the user's own archived data, prefer the local database over the network — it is instant and offline:
 
 ```bash
-weread-vault query --schema                 # list tables and columns first
+weread-vault query --schema                 # list tables and views (including book_status) first
+weread-vault query "SELECT title, status, progress, reading_seconds FROM book_status WHERE status='在读'"
 weread-vault query "SELECT title, rating FROM books WHERE rating>0 ORDER BY rating DESC LIMIT 10"
-weread-vault stats                          # aggregate reading stats incl. overall.longest (读得最久的书)
+weread-vault stats                          # aggregate reading stats incl. reading_status and overall.longest (读得最久的书)
 ```
+
+`book_status` is a built-in SQL view (`book_id, title, author, progress, reading_seconds, finish_time, read_update_time, status`) that classifies each book into `'已读'` (`finished=1` or `progress=100`), `'在读'` (`progress` 1–99), or `'未读'` (other). `weread-vault stats` also includes a top-level `reading_status` summary with counts of 已读/在读/未读, cumulative reading hours (`reading_hours`), and the 5 most recently finished books (`recent_finished`: title + date).
 
 `query` runs read-only SQL (SELECT / WITH only; the database is opened read-only) and prints rows as JSON, so an agent can answer arbitrary analytical questions ("评分最高/笔记最多/某分类有哪些书"). Note: per-book reading **time** is only available in aggregate (`stats.overall.longest` = lifetime longest-read books); the official API does not expose per-book time for an arbitrary past year, so a question pinned to e.g. "2025 年读得最久的书" cannot be answered exactly.
 
