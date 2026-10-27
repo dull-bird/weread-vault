@@ -6,6 +6,15 @@ import time
 from pathlib import Path
 
 
+def _position(text_range: str | None, page: str | None = None) -> int:
+    """Numeric sort position: range start for WeRead notes, page number for paper notes."""
+    head = str(text_range or "").split("-")[0]
+    if head.isdigit():
+        return int(head)
+    digits = "".join(ch for ch in str(page or "") if ch.isdigit())
+    return int(digits) if digits else 0
+
+
 def _safe_name(value: str | None) -> str:
     name = re.sub(r'[\\/:*?"<>|]', "", value or "未命名").strip()
     return name[:80] or "未命名"
@@ -391,9 +400,20 @@ def export_obsidian(
             already_exported = set()
 
         candidates: list[tuple[str, str, list[str]]] = []
+        # Document order (chapter, numeric position) so a thought lands right after its highlight;
+        # text_range is a string, so SQL ORDER BY would sort "1096-" before "914-".
+        order: dict[str, tuple[int, int, int, int]] = {}
+        highlight_ranges: dict[str, str] = {}
+        thought_ranges: dict[str, str] = {}
         for h in highlights:
             item_id = str(h["bookmark_id"])
             h_keys = h.keys()
+            order[item_id] = (int(h["chapter_uid"] or 0), _position(h["text_range"], h["page"] if "page" in h_keys else None),
+                              0, int(h["create_time"] or 0))
+            if h["text_range"]:
+                highlight_ranges[item_id] = f"{h['chapter_uid']}:{h['text_range']}"
+            elif h["mark_text"]:  # paper notes have no range: pair by page + quoted text
+                highlight_ranges[item_id] = f"text:{h['page'] if 'page' in h_keys else ''}:{h['mark_text']}"
             chapter = (
                 h["chapter_title"]
                 or (f"p.{h['page']}" if ("page" in h_keys and h["page"]) else "")
@@ -404,6 +424,13 @@ def export_obsidian(
         for t in thoughts:
             item_id = str(t["review_id"])
             t_keys = t.keys()
+            order[item_id] = (-1 if t["is_book_review"] and not t["abstract"] else int(t["chapter_uid"] or 0),
+                              _position(t["text_range"], t["page"] if "page" in t_keys else None),
+                              1, int(t["create_time"] or 0))
+            if t["abstract"] and t["text_range"]:
+                thought_ranges[item_id] = f"{t['chapter_uid']}:{t['text_range']}"
+            elif t["abstract"]:
+                thought_ranges[item_id] = f"text:{t['page'] if 'page' in t_keys else ''}:{t['abstract']}"
             chapter = (
                 t["chapter_name"]
                 or (f"p.{t['page']}" if ("page" in t_keys and t["page"]) else ("书评" if t["is_book_review"] else ""))
@@ -424,6 +451,7 @@ def export_obsidian(
 
         for p in popular:
             item_id = f"pop:{p['chapter_uid']}:{p['text_range']}"
+            order[item_id] = (int(p["chapter_uid"] or 0), _position(p["text_range"], None), 2, 0)
             chapter = p["chapter_title"] or ""
             item_lines = [
                 f"<!-- wv:{item_id} -->",
@@ -432,6 +460,15 @@ def export_obsidian(
             candidates.append((item_id, chapter, item_lines))
 
         new_entries = [entry for entry in candidates if entry[0] not in already_exported]
+        new_entries.sort(key=lambda entry: order.get(entry[0], (0, 0, 0, 0)))
+        # A thought on a highlight written in this same batch sits right under it, so drop the
+        # duplicated quote line; otherwise (highlight exported earlier) keep "> 原文" for context.
+        fresh_ranges = {highlight_ranges[e[0]] for e in new_entries if e[0] in highlight_ranges}
+        new_entries = [
+            (item_id, chapter,
+             [line for line in lines if not (thought_ranges.get(item_id) in fresh_ranges and line.startswith("> "))])
+            for item_id, chapter, lines in new_entries
+        ]
 
         b_keys = book.keys()
         is_paper = ("source" in b_keys and book["source"] == "paper") or book_id.startswith("PAPER_")
