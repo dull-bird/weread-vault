@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # Columns added after v1 (rich /book/info metadata). Added idempotently to existing
 # databases via PRAGMA table_info so upgrading never drops data.
@@ -19,11 +19,19 @@ _BOOK_EXTRA_COLUMNS = {
     "reader_link": "TEXT", "deep_link": "TEXT",
     "progress": "INTEGER", "finish_time": "INTEGER", "reading_seconds": "INTEGER",
     "read_update_time": "INTEGER", "progress_synced_at": "INTEGER",
+    "source": "TEXT",
+}
+
+_HIGHLIGHT_EXTRA_COLUMNS = {
+    "source": "TEXT",
+    "page": "TEXT",
 }
 
 _THOUGHT_EXTRA_COLUMNS = {
     "abstract": "TEXT",
     "chapter_idx": "INTEGER",
+    "source": "TEXT",
+    "page": "TEXT",
 }
 
 SCHEMA = """
@@ -62,6 +70,7 @@ CREATE TABLE IF NOT EXISTS books (
   reading_seconds INTEGER,
   read_update_time INTEGER,
   progress_synced_at INTEGER,
+  source TEXT,
   synced_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS highlights (
@@ -72,6 +81,8 @@ CREATE TABLE IF NOT EXISTS highlights (
   mark_text TEXT,
   text_range TEXT,
   color_style INTEGER,
+  source TEXT,
+  page TEXT,
   create_time INTEGER,
   updated_at INTEGER NOT NULL
 );
@@ -86,6 +97,8 @@ CREATE TABLE IF NOT EXISTS thoughts (
   star INTEGER,
   text_range TEXT,
   is_book_review INTEGER NOT NULL DEFAULT 0,
+  source TEXT,
+  page TEXT,
   create_time INTEGER,
   updated_at INTEGER NOT NULL
 );
@@ -176,7 +189,11 @@ FROM books;
 
 def _ensure_columns(conn: sqlite3.Connection) -> None:
     book_cols = {"author": "TEXT", "finished": "INTEGER", **_BOOK_EXTRA_COLUMNS}
-    for table, extra in (("books", book_cols), ("thoughts", _THOUGHT_EXTRA_COLUMNS)):
+    for table, extra in (
+        ("books", book_cols),
+        ("highlights", _HIGHLIGHT_EXTRA_COLUMNS),
+        ("thoughts", _THOUGHT_EXTRA_COLUMNS),
+    ):
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         for name, sqltype in extra.items():
             if name not in existing:
@@ -213,6 +230,7 @@ def summary(conn: sqlite3.Connection) -> dict[str, int | str | None]:
         conn.execute(
             """SELECT
               (SELECT count(*) FROM books WHERE book_id NOT LIKE 'MP_%') AS books,
+              (SELECT count(*) FROM books WHERE source='paper' OR book_id LIKE 'PAPER_%') AS paper_books,
               (SELECT count(*) FROM highlights) AS highlights,
               (SELECT count(*) FROM thoughts) AS thoughts,
               (SELECT max(completed_at) FROM sync_runs WHERE status='success') AS last_success,

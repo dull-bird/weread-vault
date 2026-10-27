@@ -112,6 +112,8 @@ class SyncService:
         sql = """SELECT book_id, title, read_update_time FROM books
                  WHERE (on_shelf = 1 OR on_shelf IS NULL)
                    AND book_id NOT LIKE 'MP_%'
+                   AND book_id NOT LIKE 'PAPER_%'
+                   AND COALESCE(source, 'weread') != 'paper'
                    AND (progress_synced_at IS NULL OR read_update_time > progress_synced_at)
                  ORDER BY COALESCE(read_update_time, 0) DESC, sort DESC"""
         if limit is not None:
@@ -159,6 +161,7 @@ class SyncService:
         # Incremental by default: only books without popular rows yet; refresh re-fetches all.
         where = ("b.total_notes>0" if refresh else
                  "b.total_notes>0 AND NOT EXISTS (SELECT 1 FROM popular_highlights p WHERE p.book_id=b.book_id)")
+        where += " AND COALESCE(b.source, 'weread') != 'paper' AND b.book_id NOT LIKE 'PAPER_%'"
         sql = f"SELECT book_id, title FROM books b WHERE {where} ORDER BY sort DESC"  # controlled fragment
         if limit is not None:
             sql += f" LIMIT {int(limit)}"
@@ -228,12 +231,13 @@ class SyncService:
             self.conn.executemany("INSERT OR IGNORE INTO _keep(book_id) VALUES (?)",
                                   [(book_id,) for book_id in self._account_ids])
             stale = [row[0] for row in self.conn.execute(
-                "SELECT book_id FROM books WHERE book_id NOT IN (SELECT book_id FROM _keep)")]
+                "SELECT book_id FROM books WHERE book_id NOT IN (SELECT book_id FROM _keep) "
+                "AND COALESCE(source, 'weread') != 'paper' AND book_id NOT LIKE 'PAPER_%'")]
             for book_id in stale:
                 # highlights / thoughts / popular_highlights cascade via ON DELETE CASCADE.
-                self.conn.execute("DELETE FROM books WHERE book_id=?", (book_id,))
+                self.conn.execute("DELETE FROM books WHERE book_id=? AND COALESCE(source, 'weread') != 'paper'", (book_id,))
             # Flag which surviving books are on the main shelf (vs only 归档 / 仅有笔记).
-            self.conn.execute("UPDATE books SET on_shelf=0")
+            self.conn.execute("UPDATE books SET on_shelf=0 WHERE COALESCE(source, 'weread') != 'paper' AND book_id NOT LIKE 'PAPER_%'")
             self.conn.execute("DELETE FROM _keep")
             self.conn.executemany("INSERT OR IGNORE INTO _keep(book_id) VALUES (?)",
                                   [(book_id,) for book_id in self._shelf_ids])
@@ -317,7 +321,9 @@ class SyncService:
         # Backfill rich metadata only for books not yet enriched (rating IS NULL), so this is
         # incremental: a one-time pass after upgrade, then effectively free on later runs.
         # refresh=True re-fetches every book (e.g. to backfill a newly added field like intro).
-        where = "" if refresh else "WHERE rating IS NULL"
+        where = "WHERE COALESCE(source, 'weread') != 'paper' AND book_id NOT LIKE 'PAPER_%'"
+        if not refresh:
+            where += " AND rating IS NULL"
         sql = f"SELECT book_id, title FROM books {where} ORDER BY sort DESC"
         if limit is not None:
             sql += f" LIMIT {int(limit)}"
@@ -412,7 +418,7 @@ class SyncService:
     def _sync_notes(self, full: bool, limit: int | None) -> int:
         # Only books that actually have notes need fetching — shelf-only books (total_notes=0)
         # have nothing to pull, so skipping them avoids two wasted requests each.
-        where = "WHERE total_notes > 0"
+        where = "WHERE total_notes > 0 AND COALESCE(source, 'weread') != 'paper' AND book_id NOT LIKE 'PAPER_%'"
         if not full:
             where += " AND (notes_synced_sort IS NULL OR sort > notes_synced_sort)"
         sql = f"SELECT book_id, title, sort FROM books {where} ORDER BY sort DESC"  # controlled SQL fragment
@@ -499,7 +505,10 @@ class SyncService:
         for removed in highlights["removed"]:
             bookmark_id = removed if isinstance(removed, str) else (removed or {}).get("bookmarkId")
             if bookmark_id:
-                self.conn.execute("DELETE FROM highlights WHERE bookmark_id=?", (str(bookmark_id),))
+                self.conn.execute(
+                    "DELETE FROM highlights WHERE bookmark_id=? AND COALESCE(source, 'weread') != 'paper'",
+                    (str(bookmark_id),),
+                )
         for item in highlights["updated"]:
             bookmark_id = item.get("bookmarkId")
             if not bookmark_id:
@@ -551,11 +560,14 @@ class SyncService:
         if fetched_review_ids:
             marks = ",".join("?" for _ in fetched_review_ids)
             self.conn.execute(
-                f"DELETE FROM thoughts WHERE book_id=? AND review_id NOT IN ({marks})",  # values are bound
+                f"DELETE FROM thoughts WHERE book_id=? AND COALESCE(source, 'weread') != 'paper' AND review_id NOT IN ({marks})",  # values are bound
                 [book_id, *fetched_review_ids],
             )
         else:
-            self.conn.execute("DELETE FROM thoughts WHERE book_id=?", (book_id,))
+            self.conn.execute(
+                "DELETE FROM thoughts WHERE book_id=? AND COALESCE(source, 'weread') != 'paper'",
+                (book_id,),
+            )
         self.conn.execute("UPDATE books SET notes_synced_sort=? WHERE book_id=?", (book_sort, book_id))
 
     def _sync_stats(self) -> int:

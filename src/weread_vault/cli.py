@@ -19,6 +19,7 @@ from .errors import WereadVaultError
 from .export import export_markdown, export_obsidian
 from .gateway import Gateway
 from .integrations import export_flomo, export_notion
+from .paper import format_dry_run, import_paper_books, parse_paper_notes
 from .sync import SyncService
 from .web import _reading_stats, serve
 
@@ -234,6 +235,9 @@ def parser() -> argparse.ArgumentParser:
     open_p.add_argument("--pick", type=int, metavar="N", help="多本匹配时，打开列表里的第 N 本")
     open_p.add_argument("--web", action="store_true", help="强制用浏览器打开网页版（默认在 macOS 上尝试唤起 App）")
     open_p.add_argument("--print", dest="print_only", action="store_true", help="只打印链接，不打开")
+    paper_p = sub.add_parser("import-paper", help="导入纸质书笔记（纯文本/Markdown 文件或 stdin）")
+    paper_p.add_argument("files", nargs="*", metavar="FILE", help="纸质书笔记文件（省略或 - 读 stdin）")
+    paper_p.add_argument("--dry-run", dest="dry_run", action="store_true", help="只解析并打印结果，不写入数据库")
     return result
 
 
@@ -316,7 +320,10 @@ def _print_status(path: Path) -> None:
     with connect(path) as conn:
         data = summary(conn)
         print(f"数据库：{path}")
-        print(f"书籍：{data['books']} · 划线：{data['highlights']} · 想法：{data['thoughts']}")
+        print(
+            f"书籍：{data['books']} · 纸质书 {data['paper_books']} 本 · "
+            f"划线：{data['highlights']} · 想法：{data['thoughts']}"
+        )
         print(f"最近成功同步：{_fmt_sync_time(data['last_success'])}")
         if data["last_failure"]:
             print(f"最近失败同步：{_fmt_sync_time(data['last_failure'])}（失败的书不会推进同步水位）")
@@ -631,6 +638,22 @@ def main(argv: list[str] | None = None) -> None:
             serve(db_path, args.port, args.open)
         elif args.command == "open":
             _open_book(db_path, args.query, pick=args.pick, web=args.web, print_only=args.print_only)
+        elif args.command == "import-paper":
+            chunks: list[str] = []
+            files = args.files or ["-"]
+            for f in files:
+                if f == "-":
+                    chunks.append(sys.stdin.read())
+                else:
+                    chunks.append(Path(f).expanduser().read_text(encoding="utf-8"))
+            parsed = parse_paper_notes("\n\n".join(chunks))
+            if args.dry_run:
+                print(format_dry_run(parsed))
+                return
+            initialize(db_path)
+            with connect(db_path) as conn:
+                counts = import_paper_books(conn, parsed)
+            print(f"已导入纸质书 {counts['books']} 本：划线 {counts['highlights']} 条，想法 {counts['thoughts']} 条。")
         elif args.command == "apis":
             for api in Gateway().call("/_list").get("apis", []):
                 required = "，".join(p["name"] for p in api.get("params", []) if p.get("required"))

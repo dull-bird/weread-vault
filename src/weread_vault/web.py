@@ -975,7 +975,7 @@ def make_handler(db_path: Path):
                         """SELECT book_id,title,author,cover,intro,category,publish_time,
                         total_notes,reading_progress,review_count,note_count,bookmark_count,finished,
                         rating,rating_count,word_count,publisher,isbn,translator,on_shelf,
-                        reader_link,deep_link
+                        reader_link,deep_link,source
                         FROM books WHERE book_id=?""",
                         (book_id,),
                     ).fetchone()
@@ -987,7 +987,12 @@ def make_handler(db_path: Path):
                     # (it's one call per book). Lazily enrich on first open and cache, so opening any
                     # book shows its real 推荐值 without a separate `sync info` pass. Best-effort:
                     # no key or offline (e.g. the sample DB) just skips.
-                    if not book.get("rating") and api_key_source() != "none":
+                    if (
+                        not book.get("rating")
+                        and book.get("source") != "paper"
+                        and not book_id.startswith("PAPER_")
+                        and api_key_source() != "none"
+                    ):
                         try:
                             info = Gateway().call("/book/info", bookId=book_id)
                             enrich = {

@@ -111,6 +111,10 @@ weread-vault export obsidian --out "~/Documents/Obsidian Vault/微信读书"    
 weread-vault export flomo  --webhook "$FLOMO_WEBHOOK"
 weread-vault export notion --token "$NOTION_TOKEN" --database "$NOTION_DATABASE_ID"
 
+# 导入纸质书笔记（纯文本/Markdown 文件或 stdin，幂等入库，sync 不会清理纸质书）
+weread-vault import-paper --dry-run notes.md
+weread-vault import-paper notes.md
+
 # 自动导出：配置一次，之后每次 sync（含定时同步）自动导出到所有已配置目的地
 weread-vault export config --obsidian "~/Documents/Obsidian Vault/微信读书"
 weread-vault export config --markdown "~/Documents/weread-notes"

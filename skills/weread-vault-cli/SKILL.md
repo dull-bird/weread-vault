@@ -220,6 +220,57 @@ Use `weread-vault apis` first to discover endpoint names and parameters, then `w
 
 要点：周/月/年/全部分别在 `periods.weekly/monthly/annually/overall`，每个都带 `longest`（该周期读得最久的书）、`totalReadTime`、`readDays`、`categories`（偏好分类）、`readStat`。需要按书名/分类/笔记数等检索时再转 `weread-vault query --schema` 写 SQL。
 
+## 纸质书笔记（照片/语音 → 库）
+
+当用户发来纸质书照片（书页划线/手写批注）或语音口述笔记，希望导入本地库时，按以下步骤处理：
+
+1. **整理与信息核对**：
+   - **照片**：先做 OCR，**只保留用户划线与手写批注部分**（不要把整页未划线的正文全部塞进笔记），页码从书页的页眉或页脚读取。
+   - **语音**：先将语音转写为文字，区分哪些是摘抄原句（作为 `>` 划线）、哪些是个人感想（作为 `想法:`），并按段落整理成下方标准格式。
+   - **书名与作者不确定时先问用户**：切勿猜测或编造书名、作者、ISBN；确认清楚后再生成导入文本。
+
+2. **标准导入格式**（UTF-8 纯文本 / Markdown，一个文件可包含多本书，每本以 `书名:` 开始，笔记之间用空行分隔）：
+
+   ```markdown
+   书名: 原则
+   作者: 瑞·达利欧
+   ISBN: 9787508684031
+
+   p.12
+   > 痛苦 + 反思 = 进步
+   想法: 把每次犯错都当成改进系统的信号，而不是否定自己
+
+   第15页
+   想法: 只有想法没有划线也可以单独成段
+
+   > 没有页码的划线原文
+   ```
+
+   - 页码支持 `p.12`、`P12`、`第12页`（可省略）。
+   - `>` 开头为划线（可多行，每行以 `>` 开头）。
+   - `想法:` / `想法：` / `💭` 开头为想法（可多行，直到下一个空行；若同段有划线，会自动把划线存为 `thoughts.abstract`）。
+
+3. **先 `--dry-run` 核对，再正式入库**：
+   写临时文件后用 `weread-vault import-paper file.md`（或直接通过 stdin 管道），**务必先加 `--dry-run` 核对解析结果**，确认无误后再写入数据库：
+
+   ```bash
+   # 1) 写临时文件并先用 --dry-run 核对解析出的书名、页码、划线与想法
+   cat <<'EOF' > /tmp/paper-notes.md
+   书名: 原则
+   作者: 瑞·达利欧
+   ISBN: 9787508684031
+
+   p.12
+   > 痛苦 + 反思 = 进步
+   想法: 遇到问题先记录下来，定期复盘
+   EOF
+
+   weread-vault import-paper --dry-run /tmp/paper-notes.md
+
+   # 2) 核对无误后正式导入（幂等，重复导入不会产生重复记录；之后 sync 也不会删纸质书数据）
+   weread-vault import-paper /tmp/paper-notes.md
+   ```
+
 ## Export and backup
 
 ```bash

@@ -5,7 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from weread_vault.db import SCHEMA_VERSION, _BOOK_EXTRA_COLUMNS, _THOUGHT_EXTRA_COLUMNS, connect, initialize
+from weread_vault.db import (
+    SCHEMA_VERSION,
+    _BOOK_EXTRA_COLUMNS,
+    _HIGHLIGHT_EXTRA_COLUMNS,
+    _THOUGHT_EXTRA_COLUMNS,
+    connect,
+    initialize,
+)
 
 
 class MigrationTests(unittest.TestCase):
@@ -49,6 +56,9 @@ class MigrationTests(unittest.TestCase):
             thought_cols = {row["name"] for row in conn.execute("PRAGMA table_info(thoughts)")}
             for name in _THOUGHT_EXTRA_COLUMNS:
                 self.assertIn(name, thought_cols)
+            hl_cols = {row["name"] for row in conn.execute("PRAGMA table_info(highlights)")}
+            for name in _HIGHLIGHT_EXTRA_COLUMNS:
+                self.assertIn(name, hl_cols)
             row = conn.execute("SELECT title, rating FROM books WHERE book_id='b1'").fetchone()
             self.assertEqual(row["title"], "旧书")  # existing data preserved
             self.assertIsNone(row["rating"])  # new column defaults to NULL
