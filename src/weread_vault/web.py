@@ -1050,7 +1050,7 @@ def make_handler(db_path: Path):
                         return
                     try:
                         if kind == "similar":
-                            # /book/similar errors out from the gateway, so recommend by same author.
+                            # /book/similar needs explicit count+maxIdx since official skill v1.0.5; recommend by same author here.
                             author = query.get("author", [""])[0].strip()
                             if not author:
                                 row = conn.execute("SELECT author FROM books WHERE book_id=?", (book_id,)).fetchone()

@@ -41,7 +41,7 @@ description: Recommend books for the user by combining their WeRead reading tast
 5. **借微信读书自家推荐扩展候选**（可选）：
    ```bash
    weread-vault api /book/recommend count=10
-   weread-vault api /book/similar bookId=<某本用户喜欢的书> count=10
+   weread-vault api /book/similar bookId=<某本用户喜欢的书> count=10 maxIdx=0  # v1.0.5 起 count、maxIdx 必须显式传
    ```
 
 6. **联网补充**：用你的 web 搜索工具核实口碑、获取书评/争议/中译质量等书城给不到的信息。
