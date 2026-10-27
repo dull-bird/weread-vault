@@ -67,7 +67,8 @@ def _merge_highlights(highlights: list, popular: list) -> dict:
     for h in highlights:
         span = _range_span(h["text_range"])
         bucket(h["chapter_uid"], h["chapter_title"])["own"].append(
-            {"text": h["mark_text"] or "", "span": span, "pos": span[0] if span else 0, "count": 0})
+            {"text": h["mark_text"] or "", "span": span, "pos": span[0] if span else 0, "count": 0,
+             "text_range": h["text_range"], "chapter_uid": h["chapter_uid"]})
     for p in popular:
         span = _range_span(p["text_range"])
         bucket(p["chapter_uid"], p["chapter_title"])["pop"].append(
@@ -142,7 +143,32 @@ def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = F
             f"[在微信读书中打开](weread://reading?bId={book['book_id']})",
             "",
         ]
-        book_reviews = [item for item in thoughts if item["is_book_review"]]
+        book_reviews = [item for item in thoughts if item["is_book_review"] and not item["abstract"]]
+        chapter_thoughts = [item for item in thoughts if not (item["is_book_review"] and not item["abstract"])]
+        hl_keys: set[tuple[object, str]] = set()
+        hl_ranges: set[str] = set()
+        for h in highlights:
+            if h["text_range"]:
+                hl_keys.add((h["chapter_uid"], str(h["text_range"])))
+                hl_ranges.add(str(h["text_range"]))
+        attached_by_key: dict[tuple[object, str], list] = {}
+        attached_by_range: dict[str, list] = {}
+        remaining_thoughts: list = []
+        for item in chapter_thoughts:
+            tr = str(item["text_range"]) if item["text_range"] else ""
+            if tr and (item["chapter_uid"], tr) in hl_keys:
+                attached_by_key.setdefault((item["chapter_uid"], tr), []).append(item)
+            elif tr and tr in hl_ranges:
+                attached_by_range.setdefault(tr, []).append(item)
+            else:
+                remaining_thoughts.append(item)
+
+        def _attached_for(chapter_uid: object, text_range: object) -> list:
+            if not text_range:
+                return []
+            tr = str(text_range)
+            return [*attached_by_key.get((chapter_uid, tr), []), *attached_by_range.get(tr, [])]
+
         if book_reviews:
             lines.extend(["## 我的书评", ""])
             for item in book_reviews:
@@ -156,7 +182,12 @@ def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = F
                 for entry in chapter["entries"]:
                     if entry["kind"] == "own":
                         suffix = f" <small>🔥 {entry['count']} 人也划</small>" if entry["count"] else ""
-                        lines.extend([f"- {entry['text']}{suffix}", ""])
+                        lines.append(f"- {entry['text']}{suffix}")
+                        for th in _attached_for(entry.get("chapter_uid"), entry.get("text_range")):
+                            lines.append(f"💭 {th['content'] or ''}")
+                            if th["create_time"]:
+                                lines.append(f"  <small>{_date(th['create_time'])}</small>")
+                        lines.append("")
                     else:
                         lines.extend([f"- 🔥 {entry['text']} <small>（{entry['count']} 人划线）</small>", ""])
         elif highlights:
@@ -167,13 +198,21 @@ def export_markdown(conn: sqlite3.Connection, destination: Path, force: bool = F
                     current_chapter = item["chapter_uid"]
                     if item["chapter_title"]:
                         lines.extend([f"### {item['chapter_title']}", ""])
-                lines.extend([f"- {item['mark_text'] or ''}", ""])
-        chapter_thoughts = [item for item in thoughts if not item["is_book_review"]]
-        if chapter_thoughts:
+                lines.append(f"- {item['mark_text'] or ''}")
+                for th in _attached_for(item["chapter_uid"], item["text_range"]):
+                    lines.append(f"💭 {th['content'] or ''}")
+                    if th["create_time"]:
+                        lines.append(f"  <small>{_date(th['create_time'])}</small>")
+                lines.append("")
+        if remaining_thoughts:
             lines.extend(["## 我的想法", ""])
-            for item in chapter_thoughts:
-                prefix = f"【{item['chapter_name']}】" if item["chapter_name"] else ""
-                lines.extend([f"- {prefix}{item['content'] or ''}", f"  <small>{_date(item['create_time'])}</small>", ""])
+            for item in remaining_thoughts:
+                if item["abstract"]:
+                    lines.extend([f"> {item['abstract']}", f"💭 {item['content'] or ''}",
+                                  f"<small>{_date(item['create_time'])}</small>", ""])
+                else:
+                    prefix = f"【{item['chapter_name']}】" if item["chapter_name"] else ""
+                    lines.extend([f"- {prefix}{item['content'] or ''}", f"  <small>{_date(item['create_time'])}</small>", ""])
         content = "\n".join(lines)
         if not force and path.exists() and path.read_text(encoding="utf-8") == content:
             continue

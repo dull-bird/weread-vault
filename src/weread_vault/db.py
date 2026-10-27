@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Columns added after v1 (rich /book/info metadata). Added idempotently to existing
 # databases via PRAGMA table_info so upgrading never drops data.
@@ -16,6 +16,11 @@ _BOOK_EXTRA_COLUMNS = {
     "publisher": "TEXT", "isbn": "TEXT", "translator": "TEXT",
     # 1 = currently on the main bookshelf, 0 = kept only because archived / has notes. Set during sync.
     "on_shelf": "INTEGER",
+}
+
+_THOUGHT_EXTRA_COLUMNS = {
+    "abstract": "TEXT",
+    "chapter_idx": "INTEGER",
 }
 
 SCHEMA = """
@@ -46,6 +51,7 @@ CREATE TABLE IF NOT EXISTS books (
   publisher TEXT,
   isbn TEXT,
   translator TEXT,
+  on_shelf INTEGER,
   synced_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS highlights (
@@ -63,8 +69,10 @@ CREATE TABLE IF NOT EXISTS thoughts (
   review_id TEXT PRIMARY KEY,
   book_id TEXT NOT NULL REFERENCES books(book_id) ON DELETE CASCADE,
   chapter_uid INTEGER,
+  chapter_idx INTEGER,
   chapter_name TEXT,
   content TEXT,
+  abstract TEXT,
   star INTEGER,
   text_range TEXT,
   is_book_review INTEGER NOT NULL DEFAULT 0,
@@ -131,10 +139,11 @@ def connect(path: Path) -> Iterator[sqlite3.Connection]:
 
 
 def _ensure_columns(conn: sqlite3.Connection) -> None:
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(books)")}
-    for name, sqltype in _BOOK_EXTRA_COLUMNS.items():
-        if name not in existing:
-            conn.execute(f"ALTER TABLE books ADD COLUMN {name} {sqltype}")  # name/type are internal constants
+    for table, extra in (("books", _BOOK_EXTRA_COLUMNS), ("thoughts", _THOUGHT_EXTRA_COLUMNS)):
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, sqltype in extra.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {sqltype}")  # name/type are internal constants
 
 
 def initialize(path: Path) -> None:

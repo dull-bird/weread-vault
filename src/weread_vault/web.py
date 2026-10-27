@@ -498,7 +498,7 @@ button:disabled{cursor:not-allowed;opacity:.62;filter:none}.actions{display:flex
 .hl[data-c='1']{border-color:#e11d48}.hl[data-c='2']{border-color:#ea580c}.hl[data-c='3']{border-color:#16a34a}.hl[data-c='4']{border-color:#2563eb}.hl[data-c='5']{border-color:#9333ea}
 .hl .tx{font-size:14.5px;line-height:1.65}.hl .ft{margin-top:7px;display:flex;justify-content:flex-end}
 .th{margin:14px 0;padding:13px 15px;background:color-mix(in srgb,var(--brand) 7%,var(--card));border:1px solid color-mix(in srgb,var(--brand) 22%,var(--line));border-radius:11px}
-.th .lb{font-size:11px;font-weight:600;color:var(--brand);margin-bottom:6px}.th .tx{font-size:14px;line-height:1.6}.th .ft{margin-top:7px;display:flex;justify-content:flex-end}
+.th .lb{font-size:11px;font-weight:600;color:var(--brand);margin-bottom:6px}.th .ab{margin:0 0 6px;padding-left:10px;border-left:2px solid var(--line2);color:var(--muted);font-size:13px}.th .tx{font-size:14px;line-height:1.6}.th .ft{margin-top:7px;display:flex;justify-content:flex-end}
 .note-empty{padding:40px 24px;text-align:center;color:var(--muted)}
 .tabs{display:flex;gap:18px;padding:12px 24px 0;background:var(--card);border-bottom:1px solid var(--line)}
 .tabs button{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);padding:8px 2px;font:inherit;font-size:13px;cursor:pointer}
@@ -713,8 +713,8 @@ function renderMine(d){
  if(!groups.length&&!ideas.length&&!reviews.length){body+='<div class=note-empty>这本书还没有划线或想法。</div>'}
  groups.forEach(g=>{body+=`<div class=ch>${esc(g.title||'未分章')}</div>`;
    g.items.forEach(h=>{body+=`<div class=hl data-c='${h.color_style||0}'><div class=tx>${esc(h.mark_text||'')}</div><div class=ft><span class=date>${fmtDate(h.create_time)}</span><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`});
-   (ideaByCh[g.uid]||[]).forEach(t=>{body+=`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`})});
- Object.keys(ideaByCh).forEach(uid=>{if(!groups.some(g=>String(g.uid)===String(uid))){body+=`<div class=ch>${esc(ideaByCh[uid][0].chapter_name||'想法')}</div>`+ideaByCh[uid].map(t=>`<div class=th><div class=lb>想法 ${star(t.star)}</div><div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`).join('')}});
+   (ideaByCh[g.uid]||[]).forEach(t=>{body+=`<div class=th><div class=lb>想法 ${star(t.star)}</div>${t.abstract?`<blockquote class=ab>${esc(t.abstract)}</blockquote>`:''}<div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`})});
+ Object.keys(ideaByCh).forEach(uid=>{if(!groups.some(g=>String(g.uid)===String(uid))){body+=`<div class=ch>${esc(ideaByCh[uid][0].chapter_name||'想法')}</div>`+ideaByCh[uid].map(t=>`<div class=th><div class=lb>想法 ${star(t.star)}</div>${t.abstract?`<blockquote class=ab>${esc(t.abstract)}</blockquote>`:''}<div class=tx>${esc(t.content||'')}</div><div class=ft><span class=date>${fmtDate(t.create_time)}</span><button class=cp type=button title=复制>${ICO.copy}</button></div></div>`).join('')}});
  return body+'</div>';
 }
 async function openBook(id,store,initialTab){if(!id)return;modal.classList.add('show');document.body.style.overflow='hidden';e('sheet').innerHTML='<div class=note-empty>加载中…</div>';
@@ -755,7 +755,7 @@ function toMarkdown(d){const b=d.book;let m=`# ${b.title||'未命名'}\n\n> ${b.
  reviews.forEach(t=>{m+=`## 书评\n\n${t.content||''}  \n*${fmtDate(t.create_time)}*\n\n`});
  const ideaByCh={};ideas.forEach(t=>{(ideaByCh[t.chapter_uid]=ideaByCh[t.chapter_uid]||[]).push(t)});
  let curCh=null;const groups=[];d.highlights.forEach(h=>{const c=h.chapter_uid;if(c!==curCh){curCh=c;groups.push({uid:c,title:h.chapter_title,items:[]})}groups[groups.length-1].items.push(h)});
- groups.forEach(g=>{m+=`## ${g.title||'未分章'}\n\n`;g.items.forEach(h=>{m+=`> ${(h.mark_text||'').replace(/\n/g,' ')}  \n*${fmtDate(h.create_time)}*\n\n`});(ideaByCh[g.uid]||[]).forEach(t=>{m+=`💭 ${t.content||''}  \n*${fmtDate(t.create_time)}*\n\n`})});
+ groups.forEach(g=>{m+=`## ${g.title||'未分章'}\n\n`;g.items.forEach(h=>{m+=`> ${(h.mark_text||'').replace(/\n/g,' ')}  \n*${fmtDate(h.create_time)}*\n\n`});(ideaByCh[g.uid]||[]).forEach(t=>{if(t.abstract)m+=`> ${(t.abstract||'').replace(/\n/g,' ')}\n`;m+=`💭 ${t.content||''}  \n*${fmtDate(t.create_time)}*\n\n`})});
  return m}
 const fmtHours=s=>Math.round((s||0)/360)/10;
 function barChart(data,opts){opts=opts||{};const W=opts.w||520,H=opts.h||140,pad=22,n=Math.max(1,data.length);
@@ -978,7 +978,7 @@ def make_handler(db_path: Path):
                         (book_id,),
                     ).fetchall()
                     thoughts = conn.execute(
-                        """SELECT chapter_uid,chapter_name,content,star,is_book_review,text_range,create_time
+                        """SELECT chapter_uid,chapter_idx,chapter_name,content,abstract,star,is_book_review,text_range,create_time
                         FROM thoughts WHERE book_id=? ORDER BY is_book_review DESC, create_time""",
                         (book_id,),
                     ).fetchall()

@@ -445,17 +445,27 @@ class SyncService:
                 continue
             review_id = str(review_id)
             fetched_review_ids.append(review_id)
-            is_book_review = int(review.get("chapterName") is None and review.get("range") is None)
-            values = (book_id, review.get("chapterUid"), review.get("chapterName"), review.get("content"),
-                      review.get("star"), review.get("range"), is_book_review, review.get("createTime"), now, review_id)
+            is_book_review = int(
+                review.get("chapterName") is None
+                and review.get("range") is None
+                and not review.get("abstract")
+            )
+            values = (
+                book_id, review.get("chapterUid"), review.get("chapterIdx"), review.get("chapterName"),
+                review.get("content"), review.get("abstract"), review.get("star"), review.get("range"),
+                is_book_review, review.get("createTime"), now, review_id,
+            )
             updated = self.conn.execute(
-                """UPDATE thoughts SET book_id=?,chapter_uid=?,chapter_name=?,content=?,star=?,text_range=?,
-                is_book_review=?,create_time=?,updated_at=? WHERE review_id=?""", values
+                """UPDATE thoughts SET book_id=?,chapter_uid=?,chapter_idx=?,chapter_name=?,content=?,
+                abstract=?,star=?,text_range=?,is_book_review=?,create_time=?,updated_at=? WHERE review_id=?""",
+                values,
             )
             if updated.rowcount == 0:
                 self.conn.execute(
-                    """INSERT INTO thoughts(book_id,chapter_uid,chapter_name,content,star,text_range,is_book_review,
-                    create_time,updated_at,review_id) VALUES (?,?,?,?,?,?,?,?,?,?)""", values
+                    """INSERT INTO thoughts(book_id,chapter_uid,chapter_idx,chapter_name,content,abstract,
+                    star,text_range,is_book_review,create_time,updated_at,review_id)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    values,
                 )
         # review/list/mine is fully paged above. Deleting only after all pages succeed keeps
         # local rows intact on network/API interruption and makes remote deletions visible.

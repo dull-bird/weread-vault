@@ -96,6 +96,33 @@ class ExportTests(unittest.TestCase):
             export_markdown(conn, self.out)
             self.assertEqual(export_markdown(conn, self.out, force=True), 1)
 
+    def test_thoughts_with_abstract_exported_as_pairs_and_deduplicated_on_same_range(self):
+        with connect(self.db_path) as conn:
+            # 1) Thought with abstract whose range is NOT in highlights -> paired `> 原文\n💭 想法`
+            conn.execute(
+                """INSERT INTO thoughts(review_id, book_id, chapter_uid, chapter_name, content, abstract,
+                text_range, is_book_review, create_time, updated_at)
+                VALUES('t-pair', 'book-1', 1, 'Chapter', '成对想法', '独立原文', '200-220', 0, 10, 10)"""
+            )
+            # 2) Thought whose range ('1') already appears in highlights -> attached under the highlight, not repeated
+            conn.execute(
+                """INSERT INTO thoughts(review_id, book_id, chapter_uid, chapter_name, content, abstract,
+                text_range, is_book_review, create_time, updated_at)
+                VALUES('t-same', 'book-1', 1, 'Chapter', '挂在划线下的想法', 'A highlight', '1', 0, 11, 11)"""
+            )
+            # 3) Plain chapter thought without abstract -> unchanged format
+            conn.execute(
+                """INSERT INTO thoughts(review_id, book_id, chapter_uid, chapter_name, content, abstract,
+                text_range, is_book_review, create_time, updated_at)
+                VALUES('t-plain', 'book-1', 1, 'Chapter', '普通章节点评', NULL, NULL, 0, 12, 12)"""
+            )
+            export_markdown(conn, self.out, force=True)
+            md = self.md_path.read_text(encoding="utf-8")
+            self.assertIn("> 独立原文\n💭 成对想法", md)
+            self.assertIn("- A highlight\n💭 挂在划线下的想法", md)
+            self.assertNotIn("> A highlight", md)
+            self.assertIn("- 【Chapter】普通章节点评", md)
+
 
 if __name__ == "__main__":
     unittest.main()

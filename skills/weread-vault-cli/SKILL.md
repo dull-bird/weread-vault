@@ -5,7 +5,7 @@ description: Use when a user wants to install WeRead Vault, sync WeRead books/hi
 
 # WeRead Vault CLI
 
-`weread-vault` stores WeRead metadata, book covers, highlights, reviews, and reading-stat snapshots in a local SQLite database. Its web preview reads this local database only.
+`weread-vault` stores WeRead metadata, book covers, highlights, reviews/thoughts (including `thoughts.abstract` for the highlighted source text and `thoughts.chapter_idx`), and reading-stat snapshots in a local SQLite database. Its web preview reads this local database only.
 
 ## Agent installation prompt
 

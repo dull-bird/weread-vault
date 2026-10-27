@@ -34,7 +34,8 @@ class FakeGateway:
             if self.fail_reviews:
                 raise RuntimeError("network failed")
             return {"hasMore": 0, "reviews": [{"review": {
-                "reviewId": "review-1", "content": "A thought", "chapterName": "Chapter", "chapterUid": 1, "createTime": 2
+                "reviewId": "review-1", "content": "A thought", "abstract": "Original quote",
+                "range": "10-20", "chapterName": "Chapter", "chapterUid": 1, "chapterIdx": 3, "createTime": 2
             }}]}
         if endpoint == "/readdata/detail":
             return {"ok": True}
@@ -132,3 +133,11 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(book["notes_synced_sort"], 99)
             self.assertEqual(conn.execute("SELECT count(*) FROM highlights").fetchone()[0], 1)
             self.assertEqual(conn.execute("SELECT count(*) FROM thoughts").fetchone()[0], 1)
+            thought = conn.execute(
+                "SELECT content, abstract, text_range, chapter_uid, chapter_idx FROM thoughts WHERE review_id='review-1'"
+            ).fetchone()
+            self.assertEqual(thought["content"], "A thought")
+            self.assertEqual(thought["abstract"], "Original quote")
+            self.assertEqual(thought["text_range"], "10-20")
+            self.assertEqual(thought["chapter_uid"], 1)
+            self.assertEqual(thought["chapter_idx"], 3)

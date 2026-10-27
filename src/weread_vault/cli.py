@@ -536,7 +536,7 @@ def main(argv: list[str] | None = None) -> None:
                             "books": "一本书一行。rating=推荐值0–1000(/10得百分比)；word_count字数；total_notes笔记数；"
                                      "reading_progress 0–100；book_id 以 'MP_' 开头=公众号；category 形如 '经济理财-理财'。",
                             "highlights": "划线。mark_text=原文；create_time=Unix秒(用 datetime(create_time,'unixepoch','+8 hours') 转北京时间)；book_id 关联 books。",
-                            "thoughts": "想法/书评。is_book_review=1为整本书评；content=内容；create_time=Unix秒。",
+                            "thoughts": "想法/书评。is_book_review=1为整本书评；content=想法内容；abstract=对应的划线原文；chapter_idx=章节序号；create_time=Unix秒。",
                             "reading_stats": "统计快照(JSON 在 payload)；解析好的统计请改用 `weread-vault stats`。",
                         },
                         "examples": [
