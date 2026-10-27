@@ -115,6 +115,10 @@ weread-vault export notion --token "$NOTION_TOKEN" --database "$NOTION_DATABASE_
 weread-vault import-paper --dry-run notes.md
 weread-vault import-paper notes.md
 
+# 间隔重复每日回顾（从划线和想法中抽取，支持追加到 Obsidian 日记）
+weread-vault review -n 5
+weread-vault review -n 5 --append "~/Documents/Obsidian Vault/Daily/2026-10-27.md"
+
 # 自动导出：配置一次，之后每次 sync（含定时同步）自动导出到所有已配置目的地
 weread-vault export config --obsidian "~/Documents/Obsidian Vault/微信读书"
 weread-vault export config --markdown "~/Documents/weread-notes"

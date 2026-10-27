@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 # Columns added after v1 (rich /book/info metadata). Added idempotently to existing
 # databases via PRAGMA table_info so upgrading never drops data.
@@ -137,6 +137,15 @@ CREATE TABLE IF NOT EXISTS obsidian_exported (
   item_id TEXT NOT NULL,
   exported_at INTEGER NOT NULL,
   PRIMARY KEY (book_id, item_id)
+);
+CREATE TABLE IF NOT EXISTS review_log (
+  item_type TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  shown_count INTEGER NOT NULL DEFAULT 0,
+  interval_days INTEGER NOT NULL DEFAULT 0,
+  last_shown INTEGER NOT NULL DEFAULT 0,
+  due_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (item_type, item_id)
 );
 CREATE INDEX IF NOT EXISTS idx_pop_book ON popular_highlights(book_id);
 CREATE INDEX IF NOT EXISTS idx_books_sort ON books(sort DESC);

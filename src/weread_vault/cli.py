@@ -20,6 +20,7 @@ from .export import export_markdown, export_obsidian
 from .gateway import Gateway
 from .integrations import export_flomo, export_notion
 from .paper import format_dry_run, import_paper_books, parse_paper_notes
+from .review import run_review
 from .sync import SyncService
 from .web import _reading_stats, serve
 
@@ -238,6 +239,12 @@ def parser() -> argparse.ArgumentParser:
     paper_p = sub.add_parser("import-paper", help="导入纸质书笔记（纯文本/Markdown 文件或 stdin）")
     paper_p.add_argument("files", nargs="*", metavar="FILE", help="纸质书笔记文件（省略或 - 读 stdin）")
     paper_p.add_argument("--dry-run", dest="dry_run", action="store_true", help="只解析并打印结果，不写入数据库")
+    rev_p = sub.add_parser("review", help="间隔重复每日回顾（从划线和想法中抽取）")
+    rev_p.add_argument("-n", "--count", dest="count", type=int, default=5, help="抽取条数（默认 5）")
+    rev_p.add_argument("--append", metavar="FILE", help="将回顾 Markdown 追加到指定文件末尾（不存在则创建）")
+    rev_p.add_argument("--dry-run", dest="dry_run", action="store_true", help="只展示，不更新 review_log")
+    rev_p.add_argument("--seed", type=int, help="随机种子（用于可复现抽取）")
+    rev_p.add_argument("--book", metavar="KEYWORD", help="只从书名或 book_id 匹配的书里抽取")
     return result
 
 
@@ -546,7 +553,7 @@ def main(argv: list[str] | None = None) -> None:
                       "确认请重跑：weread-vault reset --yes", file=sys.stderr)
                 raise SystemExit(1)
             with connect(db_path) as conn:
-                for table in ("highlights", "thoughts", "reading_stats", "obsidian_exported", "books", "sync_runs", "sync_state"):
+                for table in ("highlights", "thoughts", "reading_stats", "obsidian_exported", "review_log", "books", "sync_runs", "sync_state"):
                     conn.execute(f"DELETE FROM {table}")
                 conn.commit()
             print("已清空本地阅读数据。")
@@ -654,6 +661,20 @@ def main(argv: list[str] | None = None) -> None:
             with connect(db_path) as conn:
                 counts = import_paper_books(conn, parsed)
             print(f"已导入纸质书 {counts['books']} 本：划线 {counts['highlights']} 条，想法 {counts['thoughts']} 条。")
+        elif args.command == "review":
+            _require_db(db_path)
+            append_file = Path(args.append).expanduser() if args.append else None
+            with connect(db_path) as conn:
+                md = run_review(
+                    conn,
+                    n=args.count,
+                    append_path=append_file,
+                    dry_run=args.dry_run,
+                    seed=args.seed,
+                    book=args.book,
+                )
+            if append_file is None:
+                print(md)
         elif args.command == "apis":
             for api in Gateway().call("/_list").get("apis", []):
                 required = "，".join(p["name"] for p in api.get("params", []) if p.get("required"))

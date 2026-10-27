@@ -70,6 +70,7 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(ver, SCHEMA_VERSION)
             tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertIn("obsidian_exported", tables)
+            self.assertIn("review_log", tables)
 
         initialize(db_path)  # second run must not error (idempotent)
 

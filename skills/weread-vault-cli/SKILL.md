@@ -271,6 +271,17 @@ Use `weread-vault apis` first to discover endpoint names and parameters, then `w
    weread-vault import-paper /tmp/paper-notes.md
    ```
 
+## Daily review (spaced repetition)
+
+Draw `-n` highlights/thoughts (including physical-book notes) using spaced repetition (`review_log` table with intervals `1, 3, 7, 14, 30, 60, 120, 180` days). Due items (`due_at <= now`, ordered by `due_at` ascending) are selected first, followed by randomly sampled unshown items:
+
+```bash
+weread-vault review -n 5                                  # print 5 review items as Markdown to stdout
+weread-vault review -n 5 --book "三体"                    # filter by book title keyword or book_id
+weread-vault review -n 5 --dry-run --seed 42              # preview reproducibly without updating review_log
+weread-vault review -n 5 --append "<DailyNote>.md"        # append to the end of a file (created if missing)
+```
+
 ## Export and backup
 
 ```bash
