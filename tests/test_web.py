@@ -52,6 +52,9 @@ class WebTests(unittest.TestCase):
         self.assertEqual(rows[0]["cover"], "https://example.test/cover.jpg")
 
     def test_book_api_uses_official_links_and_empty_when_absent(self):
+        orig = web.api_key_source
+        web.api_key_source = lambda: "none"
+        self.addCleanup(setattr, web, "api_key_source", orig)
         data = self.get_json("/api/book?book_id=book-1")
         self.assertEqual(data["book"]["weread_url"], "")
         with connect(self.db_path) as conn:

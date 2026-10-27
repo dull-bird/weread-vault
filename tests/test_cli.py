@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -16,6 +17,8 @@ class RecordingGateway:
     """Captures the last gateway call so CLI argument mapping can be asserted."""
 
     calls: list[tuple[str, dict[str, object]]] = []
+    api_key = "fake-key"
+    sleep_seconds = 0
 
     def call(self, endpoint, **params):
         RecordingGateway.calls.append((endpoint, params))
@@ -162,6 +165,41 @@ class CliApiTests(unittest.TestCase):
             self.assertEqual(rs["reading_hours"], 2.0)
             self.assertEqual([item["title"] for item in rs["recent_finished"]], ["已读书B", "已读书A"])
             self.assertTrue(rs["recent_finished"][0]["date"])
+
+    def test_status_formats_local_timestamps_and_sync_reports_albums_breakdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "vault.db"
+            initialize(db_path)
+            ts_ok = 1700000000
+            ts_fail = 1700003600
+            with connect(db_path) as conn:
+                conn.execute(
+                    "INSERT INTO sync_runs(started_at, completed_at, status, scope, detail) VALUES (?, ?, 'success', 'all', '1 项')",
+                    (ts_ok - 10, ts_ok),
+                )
+                conn.execute(
+                    "INSERT INTO sync_runs(started_at, completed_at, status, scope, detail) VALUES (?, ?, 'failed', 'notes', 'boom')",
+                    (ts_fail - 10, ts_fail),
+                )
+
+            out = self._run(["--db", str(db_path), "status"])
+            expected_ok = time.strftime("%Y-%m-%d %H:%M", time.localtime(ts_ok))
+            expected_fail = time.strftime("%Y-%m-%d %H:%M", time.localtime(ts_fail))
+            self.assertIn(f"最近成功同步：{expected_ok}", out)
+            self.assertIn(f"最近失败同步：{expected_fail}", out)
+            self.assertNotIn(str(ts_ok), out)
+
+            def fake_shelf_call(gw, endpoint, **params):
+                if endpoint == "/shelf/sync":
+                    return {
+                        "books": [{"bookId": "b1", "title": "书1"}],
+                        "albums": [{"albumInfo": {"albumId": "a1"}}, {"albumInfo": {"albumId": "a2"}}],
+                    }
+                return {}
+
+            with mock.patch.object(RecordingGateway, "call", fake_shelf_call):
+                sync_out = self._run(["--db", str(db_path), "sync", "shelf"])
+                self.assertIn("书架 3（电子书 1，有声书 2）", sync_out)
 
 
 if __name__ == "__main__":

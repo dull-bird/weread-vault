@@ -34,6 +34,7 @@ class SyncService:
         self._account_ids: set[str] = set()
         # Just the books on the *main* bookshelf (not 归档/仅有笔记), to flag books.on_shelf.
         self._shelf_ids: set[str] = set()
+        self._shelf_breakdown: dict[str, int] = {"total": 0, "books": 0, "albums": 0, "mp": 0}
 
     def _run(self, scope: str, action: Callable[[], int]) -> int:
         started = int(time.time())
@@ -247,6 +248,9 @@ class SyncService:
         # overwrites note counts / sort / progress that the notebooks sync owns for noted books.
         payload = self.gateway.call("/shelf/sync")
         books = payload.get("books") or []
+        albums = payload.get("albums") or []
+        mp_raw = payload.get("mp")
+        mp_count = 1 if mp_raw else 0
         now = int(time.time())
         self._account_ids = set()  # a fresh shelf snapshot starts the current-account id set
         self._shelf_ids = set()
@@ -264,11 +268,19 @@ class SyncService:
         for group in payload.get("archive") or []:
             for book_id in group.get("bookIds") or []:
                 self._account_ids.add(str(book_id))
-        mp_book = (payload.get("mp") or {}).get("book") or {}
+        mp_book = (mp_raw or {}).get("book") or {}
         if mp_book.get("bookId"):
             self._account_ids.add(str(mp_book["bookId"]))
-        self.report(f"书架：{len(books)} 本")
-        return len(books)
+        total_shelf = len(books) + len(albums) + mp_count
+        self._shelf_breakdown = {
+            "total": total_shelf,
+            "books": len(books),
+            "albums": len(albums),
+            "mp": mp_count,
+        }
+        detail = f"电子书 {len(books)}，有声书 {len(albums)}" + (f"，文章收藏 {mp_count}" if mp_count else "")
+        self.report(f"书架：{total_shelf} 本（{detail}）")
+        return total_shelf
 
     def _upsert_shelf_book(self, item: dict[str, Any], now: int) -> None:
         book_id = item.get("bookId")

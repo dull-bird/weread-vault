@@ -200,3 +200,33 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(statuses["b-read"]["status"], "在读")
             self.assertEqual(statuses["b-read"]["progress"], 35)
             self.assertEqual(statuses["b-unr"]["status"], "未读")
+
+    def test_shelf_sync_counts_albums_and_mp_without_storing_albums_in_books(self):
+        messages: list[str] = []
+
+        class AlbumShelfGateway(FakeGateway):
+            def call(self, endpoint, **params):
+                if endpoint == "/shelf/sync":
+                    return {
+                        "books": [
+                            {"bookId": "book-1", "title": "电子书1", "author": "A"},
+                            {"bookId": "book-2", "title": "电子书2", "author": "B"},
+                        ],
+                        "albums": [
+                            {"albumInfo": {"albumId": "alb-1", "name": "有声书1"}},
+                            {"albumInfo": {"albumId": "alb-2", "name": "有声书2"}},
+                            {"albumInfo": {"albumId": "alb-3", "name": "有声书3"}},
+                        ],
+                        "mp": {"book": {"bookId": "MP_WXS_1"}},
+                    }
+                return super().call(endpoint, **params)
+
+        with connect(self.db_path) as conn:
+            service = SyncService(conn, AlbumShelfGateway(), report=messages.append)
+            total = service.shelf()
+            # 2 ebooks + 3 albums + 1 mp = 6
+            self.assertEqual(total, 6)
+            self.assertTrue(any("书架：6 本（电子书 2，有声书 3，文章收藏 1）" in m for m in messages))
+            # Albums are not stored in the books table
+            book_ids = {r[0] for r in conn.execute("SELECT book_id FROM books").fetchall()}
+            self.assertEqual(book_ids, {"book-1", "book-2"})

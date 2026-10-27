@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 import webbrowser
 from pathlib import Path
 
@@ -297,15 +298,21 @@ def _require_db(path: Path) -> None:
         raise WereadVaultError(f"找不到本地数据库：{path}。先运行 weread-vault init 或 weread-vault sync。")
 
 
+def _fmt_sync_time(value: int | str | None) -> str:
+    if not value:
+        return "从未"
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(int(value)))
+
+
 def _print_status(path: Path) -> None:
     _require_db(path)
     with connect(path) as conn:
         data = summary(conn)
         print(f"数据库：{path}")
         print(f"书籍：{data['books']} · 划线：{data['highlights']} · 想法：{data['thoughts']}")
-        print(f"最近成功同步：{data['last_success'] or '从未'}")
+        print(f"最近成功同步：{_fmt_sync_time(data['last_success'])}")
         if data["last_failure"]:
-            print(f"最近失败同步：{data['last_failure']}（失败的书不会推进同步水位）")
+            print(f"最近失败同步：{_fmt_sync_time(data['last_failure'])}（失败的书不会推进同步水位）")
 
 
 def _mask(secret: str) -> str:
@@ -454,8 +461,16 @@ def main(argv: list[str] | None = None) -> None:
                     if args.scope == "all" and not args.no_export:
                         from .autoexport import run_auto_exports
                         run_auto_exports(conn)
+            bd = getattr(service, "_shelf_breakdown", None)
             if isinstance(count, dict):
-                parts = [f"书架 {count['shelf']}", f"书目 {count['books']}",
+                if bd:
+                    detail = f"电子书 {bd['books']}，有声书 {bd['albums']}" + (
+                        f"，文章收藏 {bd['mp']}" if bd["mp"] else ""
+                    )
+                    shelf_label = f"书架 {count['shelf']}（{detail}）"
+                else:
+                    shelf_label = f"书架 {count['shelf']}"
+                parts = [shelf_label, f"书目 {count['books']}",
                          f"笔记 {count['notes']}", f"统计 {count['stats']}"]
                 if count.get("progress"):
                     parts.append(f"进度 {count['progress']}")
@@ -464,6 +479,11 @@ def main(argv: list[str] | None = None) -> None:
                 if count.get("removed"):
                     parts.append(f"清理旧书 {count['removed']}")
                 print("同步完成：" + "，".join(parts))
+            elif args.scope == "shelf" and bd:
+                detail = f"电子书 {bd['books']}，有声书 {bd['albums']}" + (
+                    f"，文章收藏 {bd['mp']}" if bd["mp"] else ""
+                )
+                print(f"同步完成：书架 {count}（{detail}）")
             else:
                 print(f"同步完成：{count}")
         elif args.command == "status":
