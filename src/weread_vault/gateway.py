@@ -30,8 +30,7 @@ class Gateway:
             try:
                 result = self._post(payload)
                 if result.get("upgrade_info"):
-                    message = result["upgrade_info"].get("message", "请升级微信读书 Skill")
-                    raise SkillUpgradeRequired(message)
+                    raise SkillUpgradeRequired(_upgrade_message(result["upgrade_info"]))
                 if result.get("errcode", 0) == 0:
                     return result
                 last_error = result.get("errmsg") or result
@@ -106,3 +105,28 @@ def _can_retry_with_curl(error: BaseException) -> bool:
     # PyInstaller / embedded Python builds can have a working _ssl module but no
     # usable CA bundle. curl often still verifies successfully via the OS trust store.
     return "certificate_verify_failed" in detail
+
+
+def _upgrade_message(info: object) -> str:
+    """Turn the gateway's ``upgrade_info`` into advice that fits weread-vault users.
+
+    The official message tells an agent to re-install the Skill; for weread-vault the fix is to
+    upgrade weread-vault itself (which bundles the official protocol version).
+    """
+    upstream = ""
+    if isinstance(info, dict):
+        upstream = str(info.get("message") or "").strip()
+        latest = info.get("latest_version") or info.get("version") or info.get("new_version")
+    else:
+        upstream = str(info or "").strip()
+        latest = None
+    lines = [
+        f"微信读书接口要求更新官方 Skill 协议（weread-vault 当前上报 skill_version={SKILL_VERSION}"
+        + (f"，最新 {latest}" if latest else "")
+        + "）。",
+        "请升级 weread-vault：运行 `weread-vault update`，或从源码 `git pull --recurse-submodules` 后重新安装；",
+        "开发者可运行 scripts/update-official-skill.sh 升级 vendor 子模块并跑测试。",
+    ]
+    if upstream:
+        lines.append(f"官方提示：{upstream}")
+    return "\n".join(lines)

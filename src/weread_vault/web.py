@@ -1058,7 +1058,7 @@ def make_handler(db_path: Path):
                             related = []
                             if author:
                                 target = _norm_author(author)
-                                data = Gateway().call("/store/search", keyword=author, count=20)
+                                data = Gateway().call("/store/search", keyword=author, scope=10, count=20)
                                 seen = {book_id}
                                 for tab in data.get("results", []):
                                     for entry in (tab.get("books") or []):
@@ -1113,7 +1113,7 @@ def make_handler(db_path: Path):
                         _json(self, {"books": []})
                         return
                     try:
-                        data = Gateway().call("/store/search", keyword=keyword, count=20)
+                        data = Gateway().call("/store/search", keyword=keyword, scope=10, count=20)
                         books = []
                         for tab in data.get("results", []):
                             for entry in (tab.get("books") or []):

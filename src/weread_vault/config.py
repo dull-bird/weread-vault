@@ -8,7 +8,32 @@ from pathlib import Path
 
 DEFAULT_PORT = 8765
 GATEWAY_URL = "https://i.weread.qq.com/api/agent/gateway"
-SKILL_VERSION = "1.0.3"
+# Fallback used when the vendored official Skill is not available (e.g. installed from a wheel).
+# scripts/update-official-skill.sh rewrites this line after bumping the submodule.
+SKILL_VERSION_FALLBACK = "1.0.5"
+OFFICIAL_SKILL_MD = Path(__file__).resolve().parents[2] / "vendor" / "tencent-weread-skill" / "skills" / "SKILL.md"
+
+
+def official_skill_version(skill_md: Path | None = None, fallback: str = SKILL_VERSION_FALLBACK) -> str:
+    """Read ``version:`` from the vendored official SKILL.md front matter; fall back if absent."""
+    path = skill_md or OFFICIAL_SKILL_MD
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return fallback
+    if not text.startswith("---"):
+        return fallback
+    front = text.split("---", 2)[1] if text.count("---") >= 2 else ""
+    for line in front.splitlines():
+        key, _, value = line.partition(":")
+        if key.strip() == "version":
+            value = value.strip().strip("'\"")
+            if value:
+                return value
+    return fallback
+
+
+SKILL_VERSION = official_skill_version()
 
 
 def default_data_dir() -> Path:

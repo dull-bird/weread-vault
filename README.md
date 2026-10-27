@@ -256,7 +256,7 @@ weread-vault log --json     # 供 AI 读取
 
 `weread-vault sync` 分段进行：分页拉取书目并记录每本书的远端变更标记；只同步新增/有变更的书，每本书的划线和想法先完整拉取、两类请求都成功后才用一个 SQLite 事务写入并推进标记——失败的书不标记「已同步」，下次自动重试；阅读统计按时间快照保存，不覆盖旧快照。
 
-`vendor/tencent-weread-skill` 是腾讯 [Tencent/WeChatReading](https://github.com/Tencent/WeChatReading) 的 submodule。更新官方协议：`./scripts/update-official-skill.sh`，审阅后再升级 `SKILL_VERSION` 并跑测试。
+`vendor/tencent-weread-skill` 是腾讯 [Tencent/WeChatReading](https://github.com/Tencent/WeChatReading) 的 submodule。更新官方协议：`./scripts/update-official-skill.sh`（会自动同步 `SKILL_VERSION_FALLBACK`；运行时直接读 vendor 里 SKILL.md 的 version），审阅接口变化后跑测试。
 
 ## 🛠 开发与测试
 
